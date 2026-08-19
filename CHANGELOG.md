@@ -9,6 +9,32 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.17 — 2026-08-20 — the message carries proof of its journey
+
+The close of the UX vector. Panel component v0.14:
+
+- **Proof of the journey.** Every incoming private message now says how it
+  travelled — "direct" or "via N nodes" — and a delivered message carries
+  the same proof next to its DOSZŁO stamp. This is the one line an ordinary
+  messenger has no way to say.
+- **Radio in human words.** "SNR 6.5" becomes "heard clearly (6.5)" — the
+  word leads, the number stays in brackets for those who read it. Same
+  thresholds everywhere, from lived SF8 practice.
+- **A contact card above the conversation.** The empty upper two-thirds of
+  a private thread now answers the only questions anyone looks for there:
+  AUDIBILITY and PATH. Freshness stays in the top bar — no duplication.
+- **The channel stops promising.** A public-channel message showed a waiting
+  ring forever, because the ring's confirmation does not exist on a shared
+  channel — and the DOM element it should have updated was never tracked.
+  Now: NADANO, plainly, and an error still marks NOT SENT.
+- **Navigation decision (owner-delegated):** six tabs stay at every width —
+  merging tabs per screen size would put two different product maps into
+  one manual and one set of films. Below 360 px only the typography tightens.
+- Bubbles at 78 % width with the author-side corner cut; the CONTACTS icon
+  is two people instead of accidental scissors; audibility and path speak
+  in neutral ink — green stays reserved for the link and DOSZŁO; the mock
+  rotates its replies so screenshots stop looking like duplicate-message bugs.
+
 ## v0.8.16 — 2026-08-20 — the panel keeps answering three questions: who hears me, is my cube linked, where is the alarm
 
 An external UX review of panel screenshots (fresh reviewer, no build context)

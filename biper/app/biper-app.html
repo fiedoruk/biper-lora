@@ -55,8 +55,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   color:var(--ink);font:16px var(--f-body);min-height:64px;outline:0}
 
 body.dm>header{display:none}
-header{display:flex;align-items:center;gap:10px;padding:12px 16px;
+header{display:flex;align-items:center;gap:10px;padding:12px 16px;position:relative;
   border-bottom:1px solid var(--line);background:var(--panel2);z-index:2}
+/* Mieciutkie wygaszenie pod naglowkiem: przewinieta lista scinala wiersz
+   twarda krawedzia i czytalo sie to jak usterke renderowania. */
+header::after{content:"";position:absolute;top:100%;left:0;right:0;height:14px;
+  background:linear-gradient(180deg,var(--bg),transparent);pointer-events:none}
 header svg{width:26px;height:26px;flex:none}
 header svg path{stroke:var(--hot)}
 .hname{font-weight:700;letter-spacing:.18em;font-size:15px}
@@ -64,10 +68,14 @@ header svg path{stroke:var(--hot)}
   font-size:12px;color:var(--dim)}
 .led{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
 /* Skrot alarmowy: inna geometria niz reszta (goracy obrys, prostokat), zeby
-   pod stresem nie mylil sie ani z zakladka, ani z odznaka stanu. */
-.h-sos{flex:none;background:none;border:2px solid var(--hot);color:var(--hot-ink);
-  border-radius:7px;font:600 11px/1 var(--f-mono);letter-spacing:.1em;
-  padding:7px 10px;cursor:pointer}
+   pod stresem nie mylil sie ani z zakladka, ani z odznaka stanu.
+   JEDEN rozmiar wszedzie (min 44 px celu) — naglowek i pasek rozmowy maja
+   rozny kontekst flex, wiec bez twardych minimow przycisk woził sie
+   w rozmiarze miedzy ekranami. */
+.h-sos{flex:none;display:flex;align-items:center;justify-content:center;
+  min-height:40px;min-width:56px;background:none;border:2px solid var(--hot);
+  color:var(--hot-ink);border-radius:7px;font:600 11px/1 var(--f-mono);
+  letter-spacing:.1em;padding:0 10px;cursor:pointer}
 .h-sos:active{background:var(--hot);color:#0a0d11}
 .led.on{background:var(--live);box-shadow:0 0 10px var(--live-glow),0 0 4px var(--live)}
 .led.err{background:var(--hot);box-shadow:0 0 10px var(--hot-glow)}
@@ -185,10 +193,12 @@ section.on{display:block}
 .thread.on{display:flex;flex-direction:column;justify-content:flex-end;
   min-height:calc(100dvh - 196px);padding-top:12px}
 .feed{display:flex;flex-direction:column;gap:8px}
-.msg{max-width:86%;background:var(--panel);border:1px solid var(--line);
-  border-radius:10px;padding:9px 12px;font-size:17px;line-height:1.45}
-.msg .meta{display:flex;justify-content:space-between;gap:10px;
-  font:500 11px/1 ui-monospace,monospace;letter-spacing:.06em;
+/* 78% i sciety narozniK OD STRONY AUTORA: przy 86% dymki roznily sie niemal
+   wylacznie etykieta — geometria niesie autora nawet bez czytania. */
+.msg{max-width:78%;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px 10px 10px 3px;padding:9px 12px;font-size:17px;line-height:1.45}
+.msg .meta{display:flex;justify-content:space-between;gap:4px 10px;flex-wrap:wrap;
+  font:500 11px/1.35 ui-monospace,monospace;letter-spacing:.06em;
   color:var(--dim);margin:0 0 4px}
 .msg .meta .who{color:var(--ink)}
 /* „Czeka na potwierdzenie" nie moze byc odcieniem obok „nadaje": pomiar dal
@@ -196,11 +206,19 @@ section.on{display:block}
    ta sama barwa co nadawanie, ale obrys zamiast wypelnienia. */
 .msg .meta .st-pend{color:var(--hot-ink);border:2px solid currentColor;border-radius:999px;
   padding:0 6px;background:none}
-.msg .meta .st-ok{color:var(--live-ink)}
+/* Wyzsza szczegolowosc NA WLASNYM dymku: .msg.me .meta .who (przygaszenie
+   wlasnych metadanych) bila .msg .meta .st-ok i DOSZLO — najcenniejszy
+   komunikat produktu — renderowalo sie w tym samym bladym co NADANO.
+   Od zawsze, takze na zywej parze; wykryl to dopiero audyt zrzutow. */
+.msg .meta .st-ok,.msg.me .meta .who.st-ok{color:var(--live-ink)}
 .msg .meta .st-err{color:var(--hot-ink);border:2px solid currentColor;border-radius:4px;
   padding:0 6px;text-decoration:line-through}
-.msg .meta .st-ok,.msg .meta .snr{color:var(--live-ink)}
-.msg.me{align-self:flex-end;background:var(--panel2)}
+/* Zielen = potwierdzenie DOSZLO i stan lacza, NIC wiecej. Slyszalnosc
+   i trasa mowia neutralnie — inaczej kazdy cudzy dymek swiecil zielenia
+   i odbieral jej znaczenie (ta sama lekcja co "slychac bylo" w naglowku). */
+.msg .meta .snr{color:var(--dim)}
+.msg.me{align-self:flex-end;background:var(--panel2);
+  border-radius:10px 10px 3px 10px}
 .msg.me .meta .who{color:var(--dim)}
 .msg.alarm{border-color:var(--hot-ink);box-shadow:0 0 0 1px var(--hot) inset}
 /* Okno pisania. Wysokosc nawigacji to 64 px (cel dotykowy), nie 58 — przy
@@ -214,11 +232,13 @@ section.on{display:block}
 .chatbar.on{display:flex}
 /* Kanal musi konczyc sie NAD paskiem pisania, inaczej ostatnia wiadomosc —
    czyli ta, na ktorej najbardziej zalezy — chowa sie pod polem tekstowym.
-   ZAWSZE, nie tylko przy pisaniu: przy recznym przewinieciu na sam dol
-   scroll-padding nie dziala i ogon rozmowy ladowal pod paskiem. Byly tez
-   dwie kopie tej reguly — pozniejsza, BEZ --klawiatura, wygrywala kaskade
-   i klawiatura telefonu zaslaniala ostatnia wiadomosc. Jedna regula. */
-.feed{padding-bottom:calc(var(--pasek-h, 150px) + var(--klawiatura, 0px) + 12px)}
+   Rezerwa siedzi na KONTENERZE przewijania (main), nie na .feed: padding
+   feedu liczyl sie do wysokosci tresci i przy krotkiej rozmowie flex-end
+   odsuwal dymki o caly pasek od dolu — martwy pas ~80 px dokladnie tam,
+   gdzie laduje kciuk i wzrok (audyt, runda 2). Na main ta sama rezerwa
+   jest przewijalna pustka POD trescia, zaslonieta paskiem. */
+body.z-paskiem main{padding-bottom:calc(var(--nav-h,64px) + env(safe-area-inset-bottom)
+  + var(--pasek-h,150px) + var(--klawiatura,0px) + 12px)}
 .chatbar .wiersz{display:flex;gap:8px;align-items:stretch}
 /* Kapsula odbiorcy: jedyna trwala odpowiedz na "do kogo to poleci?".
    Rozmowa prywatna dostaje goracy obrys — kanal wspolny jest domyslny,
@@ -227,7 +247,9 @@ section.on{display:block}
   font:600 10px/1.2 var(--f-mono);letter-spacing:.08em;color:var(--dim);
   border:1px solid var(--line);border-radius:8px;padding:0 8px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dokogo.dm{color:var(--ink);border-color:var(--hot-ink)}
+/* Wyroznienie prywatnosci JASNOSCIA, nie pomaranczem: kolor alarmu na
+   kapsule adresata sugerowal, ze rozmowa prywatna to akcja alarmowa. */
+.dokogo.dm{color:var(--ink);border-color:var(--ink)}
 /* Gotowe zwroty: pod stresem, w rekawiczkach, w nocy — pisanie jest najgorszym
    z mozliwych interfejsow. Jedno dotkniecie zamiast dwudziestu, i krotsza
    wiadomosc, czyli mniej czasu antenowego. */
@@ -310,6 +332,14 @@ section.on{display:block}
    z wlasna kostka i zywotnosc CZLOWIEKA po drugiej stronie. Zielen znaczy
    odtad jedno: stan lacza. */
 .tbar .ts{margin-left:auto;font:500 11px ui-monospace,monospace;color:var(--dim)}
+/* Karta kontaktu nad rozmowa — patrz drawKarta(). */
+.dkarta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 10px}
+.dkarta div{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:9px 12px}
+.dkarta b{display:block;font:600 10px/1 var(--f-mono);letter-spacing:.14em;
+  color:var(--dim);margin:0 0 5px}
+.dkarta span{font:500 13px/1.3 ui-monospace,monospace;color:var(--ink)}
+.snrn{font-style:normal;opacity:.6;font-size:10px}
 
 /* USTAWIENIA */
 #s-ust{padding-top:12px}
@@ -328,6 +358,16 @@ nav{position:fixed;left:0;right:0;bottom:0;display:flex;z-index:2;gap:2px;
 nav button{flex:1;position:relative;background:none;border:0;color:var(--dim);
   font:600 11px/1 var(--f-mono);letter-spacing:.1em;padding:0;min-height:64px;cursor:pointer}
 nav button svg{display:block;width:24px;height:24px;margin:0 auto 4px}
+/* DECYZJA (20.08, zamkniecie wektora UX): zakladek zostaje szesc na kazdej
+   szerokosci. Scalanie map produktu per szerokosc ekranu = dwie rozne
+   aplikacje w instrukcji i na filmach; cele po dodaniu marginesow i gap
+   spelniaja minimum dotykowe. Ponizej 360 px oddajemy typografie i szersza
+   szczeline miedzy celami (mniejsze etykiety + wiekszy gap = mniej
+   przypadkowych trafien w sasiada, kosztem ~2 px szerokosci celu). */
+@media(max-width:360px){
+  nav{gap:4px}
+  nav button{font-size:10px;letter-spacing:.04em}
+}
 nav button.on{color:var(--ink);box-shadow:inset 0 2px 0 var(--ink)}
 nav button .bdg{position:absolute;top:6px;right:calc(50% - 18px);width:8px;
   height:8px;border-radius:50%;background:var(--hot);
@@ -379,9 +419,12 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
   <div class="hname">BIPER</div>
   <!-- Alarm ma byc osiagalny z KAZDEGO ekranu, nie tylko przez 53-pikselowa
        zakladke: staly skrot w naglowku (i blizniak w pasku rozmowy, bo tam
-       naglowek jest schowany). -->
-  <button id="h-sos" class="h-sos" data-k-aria="a_hsos" aria-label="przejdź do alarmu">SOS</button>
+       naglowek jest schowany). ZAWSZE prawy gorny rog, ZAWSZE ten sam
+       rozmiar — kontrolka bezpieczenstwa, ktorej palec ma sie nauczyc,
+       nie moze wedrowac miedzy ekranami (audyt, runda 2). Kropka lacza
+       stoi bezposrednio na lewo od SOS na obu ekranach. -->
   <div class="hstat"><span id="hs-sos" class="hs-sos"></span><span id="hs">...</span><span class="led" id="led"></span></div>
+  <button id="h-sos" class="h-sos" data-k-aria="a_hsos" aria-label="przejdź do alarmu">SOS</button>
 </header>
 <main>
   <p id="komunikat" role="status" aria-live="polite" aria-atomic="true" class="sr"></p>
@@ -426,7 +469,8 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
     <div id="node-thread" style="display:none">
       <div class="tbar"><button class="back" id="b-back" aria-label="wstecz" data-k-aria="a_wstecz"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 5l-7 7 7 7"/></svg></button>
         <span class="tn" id="tn"></span><span class="ts" id="tsig"></span><span class="led" id="led2"></span><button id="d-sos" class="h-sos" data-k-aria="a_hsos" aria-label="przejdź do alarmu">SOS</button></div>
-      <div class="thread on" style="min-height:calc(100dvh - 250px)">
+      <div class="dkarta" id="dkarta"></div>
+      <div class="thread on" style="min-height:calc(100dvh - 320px)">
         <div class="feed" id="dfeed"></div></div>
     </div>
   </section>
@@ -499,7 +543,7 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
          wlasnie czlowiek po rozmowie prywatnej wysylal pozycje calej sieci.
          Kapsula stoi obok pola przez caly czas pisania. -->
     <span class="dokogo" id="dokogo">DO WSZYSTKICH</span>
-    <input id="ci" autocomplete="off" enterkeyhint="send" data-k-aria="ph_msg" placeholder="napisz wiadomosc...">
+    <input id="ci" autocomplete="off" enterkeyhint="send" data-k-aria="ph_msg" placeholder="wiadomosc...">
     <button id="cs" class="wyslij" data-k="b_send">NADAJ</button>
   </div>
   <div class="licznik" id="licznik" role="status" aria-live="polite"></div>
@@ -514,7 +558,9 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
        aplikacji". Alarm ma byc CZYNNOSCIA i innym ksztaltem niz wszystko. -->
   <button id="t-pomoc" class="on"><svg viewBox="0 0 24 24"><path d="M12 4.2 21 19.2H3z" stroke-linejoin="round"/><path d="M12 10v4.4"/><circle cx="12" cy="16.9" r=".5" fill="currentColor"/></svg><span data-k="t_help">ALARM</span></button>
   <button id="t-czat"><span class="bdg"></span><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9"/><path d="M19.5 15.5c1.4 1.4 1.4 3.6 0 5" opacity=".6"/></svg><span data-k="t_chat">KANAŁ</span></button>
-  <button id="t-wezly"><span class="bdg"></span><svg viewBox="0 0 24 24"><circle cx="6" cy="17" r="2.2"/><circle cx="17" cy="6.5" r="2.2"/><path d="M7.7 15.4 15.3 8M9 4.5c1.6 1.6 1.6 4 0 5.6" opacity=".6"/><path d="M14.5 14c1.6 1.6 1.6 4 0 5.6" opacity=".6"/></svg><span data-k="t_nodes">KONTAKTY</span></button>
+  <!-- Dwie osoby, nie dwa wezly z kreska: tamta ikona w 24 px czytala sie
+       jak nozyczki (audyt 20.08). Druga postac wyszarzona — "ja i ktos". -->
+  <button id="t-wezly"><span class="bdg"></span><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.1"/><path d="M3.6 19.5c.8-3.3 3-5.2 5.4-5.2s4.6 1.9 5.4 5.2"/><circle cx="16.8" cy="9" r="2.3" opacity=".55"/><path d="M15.9 14.7c1.9.4 3.4 1.9 4 4.3" opacity=".55"/></svg><span data-k="t_nodes">KONTAKTY</span></button>
   <button id="t-eter"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5" opacity=".55"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" opacity=".55"/></svg><span data-k="t_eter">ETER</span></button>
   <button id="t-info"><svg viewBox="0 0 24 24"><path d="M5 5.5h6.5a2 2 0 0 1 2 2V19a2 2 0 0 0-2-2H5z"/><path d="M19 5.5h-5.5a2 2 0 0 0-2 2V19a2 2 0 0 1 2-2H19z" opacity=".6"/></svg><span data-k="t_info">PORADNIK</span></button>
   <button id="t-ust"><svg viewBox="0 0 24 24"><path d="M5 8h9M17.5 8h1.5M5 16h3M11.5 16H19"/><circle cx="15.5" cy="8" r="2"/><circle cx="9.5" cy="16" r="2"/></svg><span data-k="t_set">USTAW</span></button>
@@ -565,7 +611,7 @@ var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:
     t_set:"USTAW",b_send:"NADAJ",b_cancel:"ANULUJ ALARM",
   h_nodes:"SŁYSZANE KOSTKI",b_sync:"ODŚWIEŻ",
   e_nodes:"cisza — wyślij ADVERT w ustawieniach,<br>żeby sąsiedzi Cię dodali",
-  ph_msg:"napisz wiadomość…",do_all:"DO WSZYSTKICH",do_dm:"DO: %s",
+  ph_msg:"wiadomość…",do_all:"DO WSZYSTKICH",do_dm:"DO: %s",
   g_now:"SŁYSZĘ TERAZ",g_past:"BYŁY SŁYSZANE",ax_now:"TERAZ",ax_old:"1h+",st_conn:"ŁĄCZĘ",st_on:"POŁĄCZONO",st_off:"BRAK ŁĄCZA",
   wstrzymany:"WSTRZYMANY",nowa_wiad:"Nowa wiadomość od %s: %t",
     armed:"NADAJĘ",next_tx:"następne nadanie",sos_fail:"błąd nadawania — spróbuj ponownie",
@@ -584,7 +630,7 @@ var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:
   eter_slychac:"%n świeżych",p_slychac:"słychać teraz",p_ostatni:"ostatni sygnał",
   p_snr:"jakość odbioru",p_zdarzen:"zdarzeń w eterze",p_lacze:"łącze z kostką",
   p_zasilanie:"zasilanie",sent:"NADANO",confirmed:"DOSZŁO",
-  heard_ago:"słychać było %t temu",heard_now:"słychać przed chwilą",path_direct:"bezpośrednio",path_nieznana:"trasa nieznana",
+  heard_ago:"słychać było %t temu",heard_now:"słychać przed chwilą",path_direct:"bezpośrednio",path_nieznana:"trasa nieznana",sl_5:"słychać świetnie",sl_0:"słychać dobrze",sl_m10:"słychać słabo",sl_min:"na granicy zasięgu",przez_1:"przez 1 węzeł",przez_234:"przez %n węzły",przez_5:"przez %n węzłów",k_slysz:"ODBIÓR OD NICH",k_trasa:"TRASA",
   path_hops:"%n przesk.",just:"teraz",min_ago:"%n min",hrs_ago:"%n godz.",
   sos_bez_lacza:"<b>Alarm wstrzymany</b> — nie ma łączności z kostką. Sprawdź, czy jej hotspot działa; próbuję dalej.",cancel_bez_lacza:"<b>Nie odwołano</b> — nie ma łączności z kostką. Alarm nadal jest uzbrojony.",
     sos_text:"POMOC! Potrzebuję pomocy.",cancel_text:"Odwołuję alarm - jestem bezpieczny.",
@@ -607,7 +653,7 @@ en:{sos_sub:"I need help",h_node:"NODE",k_name:"name",k_radio:"radio",
     t_set:"SETUP",b_send:"SEND",b_cancel:"CANCEL ALARM",
   h_nodes:"HEARD CUBES",b_sync:"REFRESH",
   e_nodes:"silence — send an ADVERT in setup<br>so neighbours add you",
-  ph_msg:"write a message...",do_all:"TO EVERYONE",do_dm:"TO: %s",
+  ph_msg:"message...",do_all:"TO EVERYONE",do_dm:"TO: %s",
   g_now:"HEARING NOW",g_past:"HEARD BEFORE",ax_now:"NOW",ax_old:"1h+",st_conn:"LINKING",st_on:"LINKED",st_off:"NO LINK",
   wstrzymany:"PAUSED",nowa_wiad:"New message from %s: %t",
     armed:"ON AIR",next_tx:"next transmit",sos_fail:"send failed — try again",
@@ -626,7 +672,7 @@ en:{sos_sub:"I need help",h_node:"NODE",k_name:"name",k_radio:"radio",
   eter_slychac:"%n fresh",p_slychac:"heard now",p_ostatni:"last signal",
   p_snr:"reception",p_zdarzen:"events on air",p_lacze:"link to cube",
   p_zasilanie:"power",sent:"SENT",confirmed:"DELIVERED",
-  heard_ago:"heard %t ago",heard_now:"heard just now",path_direct:"direct",path_nieznana:"route unknown",
+  heard_ago:"heard %t ago",heard_now:"heard just now",path_direct:"direct",path_nieznana:"route unknown",sl_5:"heard clearly",sl_0:"heard well",sl_m10:"heard faintly",sl_min:"at the edge of range",przez_1:"via 1 node",przez_234:"via %n nodes",przez_5:"via %n nodes",k_slysz:"RECEPTION FROM THEM",k_trasa:"PATH",
   path_hops:"%n hops",just:"now",min_ago:"%n min",hrs_ago:"%n h",
   sos_bez_lacza:"<b>Alarm paused</b> — no link to the cube. Check that its hotspot is on; still trying.",cancel_bez_lacza:"<b>Not cancelled</b> — no link to the cube. The alarm is still armed.",
     sos_text:"HELP! I need help.",cancel_text:"Cancelling the alarm - I am safe.",
@@ -690,6 +736,37 @@ function textBytes(s){return TENC.encode(s)}
 function writeText(f,off,s){f.set(textBytes(s),off)}
 /* byte 1 of a received message is SNR in signed quarter-dB */
 function readSnr(b){return (new Int8Array(b.buffer,b.byteOffset+1,1))[0]/4}
+/* SNR po ludzku (audyt 20.08): panel mowil "slychac bylo" w naglowku, a przy
+   dymkach zostawial goly zargon "SNR 6,5" — dwa slowniki jednej wielkosci.
+   Slowo prowadzi, liczba zostaje w nawiasie dla tych, ktorzy ja czytaja.
+   Progi z praktyki LoRa SF8 (dziala do ok. -12 dB). */
+function slowoSnr(snr){
+  if(snr==null)return "";
+  if(snr>=5)return tr("sl_5");
+  if(snr>=0)return tr("sl_0");
+  if(snr>=-10)return tr("sl_m10");
+  return tr("sl_min")}
+/* Slowo + liczba w nawiasie stoi w JEDNYM miejscu: dymek i karta kontaktu maja
+   brzmiec identycznie, a przy dwoch kopiach zmiana progow poprawia jedna
+   i zostawia druga ze starym zapisem. */
+function slyszalnosc(snr){
+  return snr==null?"":slowoSnr(snr)+' <i class="snrn">('+fmtN(snr)+')</i>'}
+function trasaTxt(path){
+  /* Doktryna 0xFF (patrz isDirect/trasaNieznana nizej): OUT_PATH_UNKNOWN
+     znaczy "nie znamy trasy powrotnej", NIE "bez przekaznika" — kazdy nowo
+     poznany wezel dostaje 0xFF. "Bezposrednio" wolno powiedziec TYLKO przy
+     path===0; wszystko inne bez pomiaru to trasa nieznana. */
+  if(path==null||path===PATH_DIRECT)return tr("path_nieznana");
+  if(path===0)return tr("path_direct");
+  if(path===1)return tr("przez_1");
+  /* nastki: 12-14 wezlow, nie "wezly" — ta sama regula co odmiana() */
+  var r10=path%10,r100=path%100;
+  return tr(r10>=2&&r10<=4&&!(r100>=12&&r100<=14)?"przez_234":"przez_5").replace("%n",path)}
+/* Trasa w dymku TYLKO, gdy jest czym sie pochwalic: stala "bezposrednio"
+   przy kazdej wiadomosci przestaje byc dowodem i staje sie szumem (audyt,
+   runda 2). Nieznana tez milczy — dowod drogi to wyjatek, nie tapeta. */
+function trasaWyjatkowa(path){
+  return (path!=null&&path!==PATH_DIRECT&&path!==0)?trasaTxt(path):""}
 function setStat(k){
   var mark=" err";
   if(linked)mark=" on";
@@ -847,9 +924,10 @@ function onFrame(b){
   }else if(code===RESP.OK){
     /* Kanal publiczny odpowiada samym OK i NIGDY nie dostaje potwierdzenia
        odbioru. Zostawianie stempla „czeka" na zawsze bylo obietnica bez
-       pokrycia — wiadomosc poszla w eter i tyle wiemy. */
+       pokrycia — wiadomosc poszla w eter i tyle wiemy. Dlatego BEZ ringu
+       oczekiwania: pierscien obiecuje potwierdzenie, ktore tu nie istnieje. */
     if(pendingSos)pendingSos=false;
-    markLastMine(stamp("sent",hhmm(),"st-pend"),true);
+    markLastMine(stamp("sent",hhmm(),""),true);
   }else if(code===RESP.SENT){
     /* Firmware oddaje tu 4-bajtowy znacznik oczekiwanego potwierdzenia
        (MyMesh.cpp: „app needs to match this to RESP_CODE_SENT.tag"). Zapisujemy
@@ -888,7 +966,10 @@ function onFrame(b){
     txt=readText(b,16,b.length);
     if(!nodes[pfx])nodes[pfx]={name:"~"+pfx.slice(0,4),unread:0,msgs:[],last:now()};
     node=nodes[pfx];
-    node.msgs.push({me:false,body:txt,snr:snr,t:hhmm()});
+    node.msgs.push({me:false,body:txt,snr:snr,path:b[10],t:hhmm()});
+    /* pathMsg = trasa OSTATNIEJ realnej wiadomosci — swiezszy dowod niz
+       out_path kontaktu (ktory dla nowo poznanych to zawsze 0xFF-nieznana) */
+    node.pathMsg=b[10];
     if(snr!=null){node.snr=snr;node.snrT=now()}   /* przyrzad ETERU czytal node.snr,
       ktore nikt nie ustawial — wiersz „jakosc odbioru" pokazywal „—" ZAWSZE */
     if(openThread===pfx)drawThread();
@@ -1201,7 +1282,7 @@ function setChatPlaceholder(){
   k.className="dokogo"+(dm?" dm":"")}
 function showChatbar(on){
   $("chatbar").className="chatbar"+(on?" on":"");
-  document.body.classList.toggle("pisze",on);
+  document.body.classList.toggle("z-paskiem",on);
   if(on)requestAnimationFrame(function(){
     var h=Math.round($("chatbar").getBoundingClientRect().height);
     document.documentElement.style.setProperty("--pasek-h",h+"px");
@@ -1252,7 +1333,7 @@ function odczytajStan(){
       $("f-wifi").value=String(d.ssid).replace(/^Biper-/,"");
     /* Wersja z KOSTKI, nie z pliku panelu: przy kilku kostkach i kilku
        wydaniach dziennie czlowiek musi widziec, ktory system tu dziala. */
-    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.13 / K5";
+    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.14 / K5";
   }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
 }
 
@@ -1344,22 +1425,53 @@ $("d-sos").onclick=function(){closeThread();showChatbar(false);show("pomoc")};
 /* one message header: mine carries the delivery state, theirs sender + SNR */
 function whoTag(html,cls){return '<span class="who'+(cls?" "+cls:"")+'">'+html+"</span>"}
 function stamp(k,t,cls){return whoTag(tr(k)+" &middot; "+t,cls)}
-function snrTag(snr){return snr==null?"":'<span class="snr">SNR '+fmtN(snr)+"</span>"}
-function msgMeta(mine,who,t,snr){
-  return mine?stamp("sent",t,"st-pend"):whoTag(esc(who)+" &middot; "+t)+snrTag(snr)}
+/* Meta cudzego dymka = JEDNA linia (audyt, runda 2: trzy linie drobnego
+   monospace przed dwoma slowami tresci odwrocily proporcje). Rozmowa
+   prywatna ma karte kontaktu — dymek dodaje tylko WYJATEK (trasa przez
+   przekazniki). Kanal karty nie ma, wiec niesie samo slowo slyszalnosci;
+   liczba SNR mieszka wylacznie na karcie. */
+function msgMeta(mine,who,t,snr,path){
+  if(mine)return stamp("sent",t,"st-pend");
+  var w=whoTag(esc(who)+" &middot; "+t);
+  if(path===undefined)
+    return w+(snr!=null?'<span class="snr">'+slowoSnr(snr)+"</span>":"");
+  var wyj=trasaWyjatkowa(path);
+  return w+(wyj?'<span class="snr">'+wyj+"</span>":"")}
 function drawThread(){
   var n=nodes[openThread],h="";
   for(var i=0;i<n.msgs.length;i++){
     var m=n.msgs[i];
     h+='<div class="msg'+(m.me?" me":"")+'"><p class="meta">'
-      +((m.me&&m.st)||msgMeta(m.me,n.name,m.t||"",m.snr))+"</p>"+esc(m.body)+"</div>"}
+      +((m.me&&m.st)||msgMeta(m.me,n.name,m.t||"",m.snr,m.path))+"</p>"+esc(m.body)+"</div>"}
   var f=$("dfeed");f.innerHTML=h;
+  drawKarta();
   if(f.lastChild)f.lastChild.scrollIntoView({block:"end"})}
+/* Mini-karta kontaktu nad rozmowa: gorne 2/3 ekranu DM bylo pusta siatka,
+   a jedyne, czego sie tam szuka, to "jak dobrze go slychac i ktoredy".
+   Swiezosc ("slychac bylo X temu") zostaje w pasku u gory — bez dublowania.
+   Wolane wylacznie z drawThread(), ktore watek juz odczytalo — stad brak
+   straznikow na element i na wezel. */
+function drawKarta(){
+  var n=nodes[openThread],sn=slyszalnosc(n.snr)||"&mdash;";
+  /* Trasa ostatniej wiadomosci (pathMsg) przed out_path kontaktu: kontaktowy
+     0xFF-nieznana wisi na kazdym nowo poznanym wezle, a przychodzaca ramka
+     niesie ZMIERZONA droge. */
+  var p=n.pathMsg!=null?n.pathMsg:n.path;
+  $("dkarta").innerHTML='<div><b>'+tr("k_slysz")+'</b><span>'+sn+'</span></div>'
+    +'<div><b>'+tr("k_trasa")+'</b><span>'+trasaTxt(p)+'</span></div>'}
 /* Ostatnia WYSLANA przez nas wiadomosc — pamietana wprost, a nie zgadywana
    z tego, jaki watek jest akurat otwarty. */
 var ostatniaMoja=null;
+/* Kanal nie trzyma wiadomosci w nodes[].msgs — rysuje wprost do #feed.
+   Bez uchwytu na ten element OK z kostki nie mialo czego odstemplowac
+   i pierscien oczekiwania wisial na kanale WIECZNIE (audyt 20.08 widzial
+   go jako "jedyny stan wiadomosci wychodzacej"). */
+var ostatniDomKanal=null;
 function markLastMine(st,kanal,ack){
-  if(kanal){ if(ostatniaMoja){ostatniaMoja.st=st;odswiezWidok()} return; }
+  if(kanal){
+    var mt=ostatniDomKanal&&ostatniDomKanal.querySelector(".meta");
+    if(mt)mt.innerHTML=st;
+    return}
   if(chatTarget!=="chan"&&openThread){
     var ms=nodes[openThread].msgs;
     for(var i=ms.length-1;i>=0;i--)if(ms[i].me){ms[i].st=st;if(ack)ms[i].ack=ack;ostatniaMoja=ms[i];break}
@@ -1374,7 +1486,13 @@ function stempluj(ack){
     for(var i=ms.length-1;i>=0;i--)
       if(ms[i].me&&ms[i].ack===ack){
         if(ms[i].potw)return;
-        ms[i].potw=true;ms[i].st=stamp("confirmed",hhmm(),"st-ok");
+        ms[i].potw=true;
+        /* Dowod drogi obok potwierdzenia — ale tylko gdy jest CZYM sie
+           pochwalic (przez N wezlow). Stala "bezposrednio" przy kazdym
+           DOSZLO byla szumem, a 0xFF to trasa NIEZNANA, nie bezposrednia. */
+        var tw=trasaWyjatkowa(nodes[q].path);
+        ms[i].st=stamp("confirmed",hhmm(),"st-ok")
+          +(tw?'<span class="snr">'+tw+"</span>":"");
         if(openThread===q)drawThread();
         return}}
 }
@@ -1396,6 +1514,7 @@ function addMsg(feedId,who,body,snr,me,alarm){
   var d=document.createElement("div");
   d.className="msg"+(me?" me":"")+(alarm?" alarm":"");
   d.innerHTML='<p class="meta">'+msgMeta(me,who,hhmm(),snr)+"</p>"+esc(body);
+  if(feedId==="feed"&&me)ostatniDomKanal=d;
   $(feedId).appendChild(d);
   d.scrollIntoView({block:"end"})}
 /* Cudzyslowy MUSZA byc kodowane: esc() trafia takze do ATRYBUTU (title= na
@@ -1495,7 +1614,7 @@ $("f-lang").onchange=function(){ustawJezyk(this.value)};
   if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
   if(j!==lang)ustawJezyk(j);
 })();
-$("ver").textContent="Biper panel v0.13 / K5 \u00b7 OS: \u2014";
+$("ver").textContent="Biper panel v0.14 / K5 \u00b7 OS: \u2014";
 /* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
    UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
    przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja
@@ -1569,7 +1688,7 @@ function FakeWS(){var s=this;s.binaryType="";
     push32(f,now()-agoS);
     f=f.concat([0,0,0,0, 0,0,0,0, 0,0,0,0]);
     return f}
-  var zosia=[0xaa,1,2,3,4,5],marek=[0xbb,9,8,7,6,5];
+  var zosia=[0xaa,1,2,3,4,5],marek=[0xbb,9,8,7,6,5],mockChanN=0,mockDmN=0;
   s.send=function(data){var b=new Uint8Array(data),c=b[0];
     if(c===CMD.APP_START){
       var name="Biper-15FE",f=[RESP.SELF_INFO,1,22,22];
@@ -1589,18 +1708,30 @@ function FakeWS(){var s=this;s.binaryType="";
       ma mowic to samo, co plytka, inaczej makiety pokazuja nieistniejacy
       pomiar */reply([RESP.BATT,0,0,0,0,0,0,0,0,0,0])}
     else if(c===CMD.SEND_CHAN){reply([RESP.OK]);
-      /* zadnego CONFIRMED: kanal publiczny go nie dostaje */
-      var r=[RESP.CHAN_V3,26,0,0,0,2,0,0,0,0,0]; /* text from offset 11 */
-      pushText(r,"Zosia: Przyjęłam, jestem 2 km na północ.");
+      /* zadnego CONFIRMED: kanal publiczny go nie dostaje.
+         Odpowiedzi kraza — identyczna tresc na kazdym zrzucie wygladala
+         jak duplikat wiadomosci, czyli jak blad zaufania. */
+      var chTeksty=["Zosia: Przyjęłam, jestem 2 km na północ.",
+        "Marek: Widzę was oboje, jestem na wzgórzu.",
+        "Zosia: U mnie wszystko gra, wracam przed zmrokiem."];
+      /* SNR tez rotuje: dwie osoby z identycznym (6,5) czytaly sie jak
+         stala z szablonu i podwazaly zaufanie do pomiaru (audyt, runda 2). */
+      var r=[RESP.CHAN_V3,[26,14,30][mockChanN%3],0,0,0,2,0,0,0,0,0];
+      pushText(r,chTeksty[(mockChanN++)%chTeksty.length]); /* text from offset 11 */
       reply(r,3300)}
     else if(c===CMD.SEND_TXT){reply([RESP.SENT,0,1,0,0,0,1,0,0,0]);
       /* Tag ACK = tag z RESP.SENT (bajty 2-5). Goly [0x82] nigdy sie nie
          dopasowywal, wiec podglad wiecznie pokazywal NADANO i ukrywal caly
          stan DOSZLO — recenzent wzial to za brak drabinki stanow. */
       reply([PUSH.CONFIRMED,1,0,0,0],1500);
-      var d=[RESP.DM_V3,30,0,0].concat(zosia).concat([0xFF,0]); /* prefix at 4 */
+      var dmTeksty=["Jasne, czekam przy moście.",
+        "Dobrze, będę za pół godziny.",
+        "Widziałam Marka na wzgórzu, machał."];
+      /* path=0, nie 0xFF: 0xFF to OUT_PATH_UNKNOWN ("trasa nieznana") —
+         mock z 0xFF kazal kazdemu DM-owi klamac "bezposrednio". */
+      var d=[RESP.DM_V3,[30,18,26][mockDmN%3],0,0].concat(zosia).concat([0,0]); /* prefix at 4 */
       push32(d,now());
-      pushText(d,"Jasne, czekam przy moscie."); /* text from offset 16 */
+      pushText(d,dmTeksty[(mockDmN++)%dmTeksty.length]); /* text from offset 16 */
       reply(d,2600)}
     else if(c===CMD.ADVERT){reply([RESP.OK]);
       reply([PUSH.ADVERT].concat(zosia).concat(new Array(26).fill(0)),900)}
