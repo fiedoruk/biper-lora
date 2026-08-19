@@ -67,4 +67,4 @@ uint32_t biper_ble_pin(uint32_t upstream_pin);
 bool biper_forwarding();
 bool biper_forwarding_toggle();
 // Clears the remembered choice — called by the factory-reset wipe.
-void biper_forwarding_forget();
+void biper_ap_forget();

@@ -9,6 +9,20 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.3 — 2026-08-19 — the hotspot stops fighting the person using it
+
+- **One password per cube, remembered by the phone.** The password used to
+  rotate with every hotspot window, so every phone kept a stale one and every
+  session began with retyping eight characters off a tiny screen. It is now
+  drawn once, stored in the cube, and shown on the OLED whenever the window
+  is open — the phone remembers it and joins by itself. Physical control
+  stays the gate (only the button opens the window) and a wipe erases the
+  password with everything else.
+- **The window no longer closes mid-session.** The ten-minute countdown runs
+  only while nobody is connected; as long as a phone is on the cube's Wi-Fi,
+  the network stays up. A window nobody joined still closes after the same
+  ten minutes.
+
 ## v0.8.2 — 2026-08-19 — the hotspot introduces itself with a word
 
 - **`Biper-SOWA` instead of `Biper-3F2A`.** Owner decision: hex digits are

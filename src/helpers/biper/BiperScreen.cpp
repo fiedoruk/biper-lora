@@ -687,9 +687,10 @@ static void wipe_everything() {
   // `wiping` latch keeps the wipe animation on screen until the lights go out.
   wiping = true;
   Serial.printf("[BIPER] wipe requested from button\n");
-  // MeshCore's factory reset knows nothing about our SIEC/SAM bit — we clear it
-  // ourselves, so a wiped cube really does come up like new.
-  biper_forwarding_forget();
+  // MeshCore's factory reset knows nothing about our storage (the SIEC/SAM
+  // bit, the fixed hotspot password) — we clear it ourselves, so a wiped cube
+  // really does come up like new.
+  biper_ap_forget();
   biper_ap_interface()->onClientFrame(FRAME, sizeof(FRAME));
 }
 

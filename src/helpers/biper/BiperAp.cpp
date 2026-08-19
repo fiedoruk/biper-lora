@@ -445,6 +445,13 @@ static void biper_httpd_stop() {
   }
 }
 
+static Preferences biper_nvs;
+// The stored key stays "siec" ("network"): it is on flash in every cube already
+// shipped, and renaming it would silently reset their choice on the next update.
+static const char* NVS_NAMESPACE = "biper";
+static const char* NVS_FORWARD = "siec";
+static const char* NVS_PASS = "haslo";  // the cube's fixed hotspot password
+
 // ---------------------------------------------------------------------------
 // AP window state machine (own task)
 // ---------------------------------------------------------------------------
@@ -459,23 +466,28 @@ static void biper_ap_window() {
   const bool ap_ok = WiFi.softAP(biper_state.ssid, nullptr, 1, 0, 1);
   biper_state.pass[0] = 0;
 #else
-  // Owner decision (18.08): fresh 8-character WPA2 password per window, shown
-  // on the OLED — "whoever sees the screen may join". Encrypts the air link
-  // too. max_connection=1: the cube is ONE person's terminal.
-  // Eight DIGITS would have given 26.6 bits, a space that falls to a single
-  // graphics card in minutes when the format is known up front. This is not
-  // about getting in during the ten-minute window — it is about whoever RECORDS
-  // the handshake decrypting the WHOLE session afterwards: contacts, message
-  // bodies, the call for help that was sent. Rotating the password per window
-  // protects the next sessions, not the recorded one.
+  // Owner decision (19.08, revising his own 18.08 call): the password is FIXED
+  // per cube — drawn once, kept in the cube's own storage, shown on the OLED
+  // whenever the window is open. The per-window rotation defended recorded
+  // traffic, but its daily cost was paid by the owner's family: every phone
+  // remembered a stale password, every new window meant retyping eight
+  // characters off a tiny screen (owner's two-cube test, 19.08). Physical
+  // control remains the gate — only the button opens the window — and a wipe
+  // erases the password with the rest of the cube.
+  // max_connection=1: the cube is ONE person's terminal.
   // Alphabet without 0/O/1/I/L: the password is copied off a 64x48 screen, so
   // look-alike glyphs would cost more than the two bits they bring.
   // Eight characters from a 31-symbol alphabet = 39.6 bits. That figure is
   // stated HERE and nowhere else; BiperAp.h points here rather than repeat it.
-  static const char ALF[] = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  for (size_t i = 0; i + 1 < sizeof(biper_state.pass) && i < 8; i++)
-    biper_state.pass[i] = ALF[esp_random() % (sizeof(ALF) - 1)];
-  biper_state.pass[8] = 0;
+  if (biper_nvs.getString(NVS_PASS, biper_state.pass, sizeof(biper_state.pass)) == 0 ||
+      biper_state.pass[0] == 0) {
+    static const char ALF[] = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    for (size_t i = 0; i + 1 < sizeof(biper_state.pass) && i < 8; i++)
+      biper_state.pass[i] = ALF[esp_random() % (sizeof(ALF) - 1)];
+    biper_state.pass[8] = 0;
+    biper_nvs.putString(NVS_PASS, biper_state.pass);
+    Serial.printf("[BIPER_AP] pass drawn once, stored\n");
+  }
   const bool ap_ok = WiFi.softAP(biper_state.ssid, biper_state.pass, 1, 0, 1);
 #endif
   IPAddress ip = WiFi.softAPIP();
@@ -498,10 +510,15 @@ static void biper_ap_window() {
                 biper_state.pass[0] ? "(set, shown on screen)" : "(open)");
 
   uint32_t last_log = 0;
+  // The countdown runs only while the cube is ALONE (owner decision 19.08):
+  // a session at the panel is never cut mid-use. Every tick with a guest
+  // present pushes `idle_since` forward, so the ten minutes start counting
+  // the moment the last phone leaves — and a window nobody joined still
+  // closes after the same ten minutes as before.
+  uint32_t idle_since = t_up;
   for (;;) {
     const uint32_t now = millis();
     const uint32_t elapsed = now - t_up;
-    if (elapsed >= BIPER_AP_WINDOW_MS) break;
     if (biper_toggle_req) {  // second gesture: close the window early
       biper_toggle_req = false;
       Serial.printf("[BIPER_AP] toggle: closing early\n");
@@ -512,7 +529,9 @@ static void biper_ap_window() {
 
     const uint8_t guests = (uint8_t)WiFi.softAPgetStationNum();
     biper_state.guests = guests;
-    biper_state.window_left_s = (uint16_t)((BIPER_AP_WINDOW_MS - elapsed) / 1000UL);
+    if (guests > 0) idle_since = now;
+    if (now - idle_since >= BIPER_AP_WINDOW_MS) break;
+    biper_state.window_left_s = (uint16_t)((BIPER_AP_WINDOW_MS - (now - idle_since)) / 1000UL);
 
     if (now - last_log > BIPER_AP_HEAP_LOG_MS) {
       last_log = now;
@@ -543,7 +562,7 @@ static void biper_ap_window() {
   biper_state.window_left_s = 0;
   biper_state.window_total_s = 0;
   // A closed window has no reason to keep the password in RAM for the rest of
-  // the device's life; the next window draws a fresh one anyway.
+  // the device's life; the next window reads it back from storage.
   memset(biper_state.pass, 0, sizeof(biper_state.pass));
   // The bridge STAYS enabled — only the socket dies with the window. The C3
   // audit fix put a disable() here and that was a regression: after the first
@@ -590,11 +609,6 @@ const NodePrefs* biper_prefs() { return biper_prefs_ref; }
 // upstream. Four marked blocks in one file of someone else's is our whole
 // intrusion and it is to stay that way — every further one is paid for at every
 // rebase onto a new MeshCore.
-static Preferences biper_nvs;
-// The stored key stays "siec" ("network"): it is on flash in every cube already
-// shipped, and renaming it would silently reset their choice on the next update.
-static const char* NVS_NAMESPACE = "biper";
-static const char* NVS_FORWARD = "siec";
 
 // The forwarding switch. Returns the state AFTER the change; false if no prefs.
 bool biper_forwarding_toggle() {
@@ -606,11 +620,13 @@ bool biper_forwarding_toggle() {
   return now_on;
 }
 
-// A wipe to factory state has to take this bit with it too — otherwise the
-// "new" cube comes up in the mode the previous owner picked.
-void biper_forwarding_forget() {
+// A wipe to factory state has to take OUR whole storage with it — otherwise
+// the "new" cube comes up in the previous owner's mode and, worse, with the
+// previous owner's hotspot password still on its screen.
+void biper_ap_forget() {
   biper_nvs.remove(NVS_FORWARD);
-  Serial.printf("[BIPER] repeat=forgotten (factory)\n");
+  biper_nvs.remove(NVS_PASS);
+  Serial.printf("[BIPER] repeat+pass=forgotten (factory)\n");
 }
 bool biper_forwarding() {
   return biper_prefs_ref != nullptr && biper_prefs_ref->isRepeatEn();
@@ -645,8 +661,10 @@ void biper_ap_setup(NodePrefs* prefs, MultiSerialInterface* manager) {
   //
   // SIEC from the factory; after that whatever the person chose holds — see
   // biper_forwarding_toggle() above.
+  // Storage opens unconditionally: the fixed hotspot password lives here too,
+  // and it must survive even a build where prefs never arrived.
+  biper_nvs.begin(NVS_NAMESPACE, false);
   if (prefs != nullptr) {
-    biper_nvs.begin(NVS_NAMESPACE, false);
     const bool forwarding = biper_nvs.getBool(NVS_FORWARD, true);
     prefs->setRepeatEn(forwarding);
     Serial.printf("[BIPER] repeat=%s (remembered)\n", forwarding ? "on" : "off");
