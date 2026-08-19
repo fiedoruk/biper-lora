@@ -9,6 +9,22 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.1 — 2026-08-19 — every cube gets its own hotspot name
+
+- **Two cubes no longer announce the same Wi-Fi network.** The hotspot name
+  took bits 32–47 of the chip's efuse identifier — and on the ESP32-C6 that
+  identifier is an EUI-64, whose constant `FF:FE` filler plus a batch octet
+  sit exactly in that slice. Every cube of a production batch therefore
+  called itself the same `Biper-15FE` (measured on the owner's pair, 19 Aug),
+  and a phone joining "the" hotspot could land on either device. The name now
+  XOR-folds all 64 bits, so any octet that differs between units reaches the
+  name. Existing cubes will show a new hotspot name once — the name is
+  derived, not stored.
+- **The boot banner stops lying about its version.** v0.8 printed
+  "Biper-AP layer v0.7" — the banner was a forgotten literal. The version now
+  lives in one header and `release.sh` refuses to build an image whose banner
+  disagrees with `biper/VERSION`.
+
 ## v0.8 — 2026-08-19 — the iPhone reaches the panel, the screen admits who it hears
 
 - **iOS no longer answers "bad host" on the way to the panel.** The cube served

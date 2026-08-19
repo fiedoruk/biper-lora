@@ -29,6 +29,11 @@ done
 # The product version lives in biper/VERSION — the panel keeps its own
 # component version and the two no longer have to move together.
 VERSION="$(tr -d '[:space:]' < "$ROOT/biper/VERSION")"
+# The boot banner repeats this version from a header the compiler can read.
+# Refuse to build an image whose banner would disagree with its file name —
+# v0.8 shipped printing "v0.7" because the banner was a forgotten literal.
+BANNER="$(sed -n 's/.*BIPER_LAYER_VERSION "\(.*\)".*/\1/p' "$ROOT/src/helpers/biper/BiperVersion.h")"
+[ "$BANNER" = "$VERSION" ] || { echo "error: BiperVersion.h says '$BANNER', biper/VERSION says '$VERSION' — align them and rebuild"; exit 1; }
 COMMIT_SHA="$(git -C "$ROOT" rev-parse --short=7 HEAD)"
 OUT="$ROOT/biper/releases/Biper_Unit_C6L-v${VERSION}-${COMMIT_SHA}-merged.bin"
 mkdir -p "$(dirname "$OUT")"

@@ -5,6 +5,7 @@
 #include "BiperAp.h"
 #include "BiperApInterface.h"
 #include "BiperScreen.h"
+#include "BiperVersion.h"
 
 #include <NodePrefs.h>
 #include <helpers/MultiSerialInterface.h>
@@ -671,13 +672,20 @@ void biper_ap_setup(NodePrefs* prefs, MultiSerialInterface* manager) {
     biper_ap_interface()->enable();
   }
 
-  uint64_t mac = ESP.getEfuseMac();
+  // Fold ALL the efuse bits into the name. The old code printed bits 32-47 —
+  // and on the C6 the efuse identifier comes back as an EUI-64, whose constant
+  // FF:FE filler plus a batch octet sit exactly in that slice. Result: every
+  // cube of the owner's pair announced the SAME hotspot, Biper-15FE (the FE is
+  // literally the filler; measured on both units, 19 Aug). An XOR fold lets
+  // any differing octet reach the name, wherever the unique bytes live.
+  const uint64_t mac = ESP.getEfuseMac();
+  const uint16_t ssid_id = (uint16_t)(mac ^ (mac >> 16) ^ (mac >> 32) ^ (mac >> 48));
   snprintf(biper_state.ssid, sizeof(biper_state.ssid), "Biper-%04X",
-           (unsigned)((mac >> 32) & 0xFFFF));
+           (unsigned)ssid_id);
 #ifdef BIPER_SCREEN
   biper_screen_start();
 #endif
-  Serial.printf("[BIPER] Biper-AP layer v0.7, ssid=%s autostart=%d\n",
+  Serial.printf("[BIPER] Biper-AP layer v" BIPER_LAYER_VERSION ", ssid=%s autostart=%d\n",
                 biper_state.ssid, (int)autostart);
   if (autostart) biper_toggle_req = true;
   xTaskCreate(biper_ap_task, "biper_ap", 12288, nullptr, 1, nullptr);
