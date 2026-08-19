@@ -1154,6 +1154,9 @@ function odczytajStan(){
     $("s-uwaga").textContent = d.hotspot_s>0 ? tr("stan_okno") : "";
     if($("f-wifi") && d.ssid && !$("f-wifi").value && document.activeElement!==$("f-wifi"))
       $("f-wifi").value=String(d.ssid).replace(/^Biper-/,"");
+    /* Wersja z KOSTKI, nie z pliku panelu: przy kilku kostkach i kilku
+       wydaniach dziennie czlowiek musi widziec, ktory system tu dziala. */
+    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.8 / K5";
   }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
 }
 
@@ -1370,7 +1373,7 @@ $("f-lang").onchange=function(){ustawJezyk(this.value)};
   if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
   if(j!==lang)ustawJezyk(j);
 })();
-$("ver").textContent="Biper panel v0.8 / K5";
+$("ver").textContent="Biper panel v0.8 / K5 \u00b7 OS: \u2014";
 /* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
    UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
    przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja

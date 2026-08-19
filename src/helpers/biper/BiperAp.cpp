@@ -262,7 +262,7 @@ static esp_err_t state_get(httpd_req_t* req) {
   // goscie=guests, pamiec=free_heap.)
   int n = snprintf(buf, sizeof(buf),
       "{\"tryb\":\"%s\",\"slyszy\":%u,\"praca_s\":%lu,\"hotspot_s\":%u,"
-      "\"okno_s\":%u,\"goscie\":%u,\"ssid\":\"%s\",\"pamiec\":%lu%s",
+      "\"okno_s\":%u,\"goscie\":%u,\"ssid\":\"%s\",\"os\":\"%s\",\"pamiec\":%lu%s",
       biper_forwarding() ? "SIEC" : "SAM",
       (unsigned)biper_heard_15min(),
       (unsigned long)(millis() / 1000UL),
@@ -270,6 +270,7 @@ static esp_err_t state_get(httpd_req_t* req) {
       (unsigned)biper_state.window_total_s,
       (unsigned)biper_state.guests,
       biper_state.ssid,
+      BIPER_LAYER_VERSION,
       (unsigned long)ESP.getFreeHeap(),
       mv > 0 ? "" : "}");
   if (n > 0 && (size_t)n < sizeof(buf) && mv > 0) {
@@ -298,6 +299,11 @@ static void security_headers(httpd_req_t* req) {
                      "font-src 'self'; connect-src 'self' ws://192.168.4.1; "
                      "frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
   httpd_resp_set_hdr(req, "X-Content-Type-Options", "nosniff");
+  // Without this the phone happily kept a panel cached from an OLDER firmware
+  // and showed its stale version forever ("panel caly czas pokazuje 0.6" —
+  // owner, 19.08). The panel is 32 kB over the cube's own link: revalidating
+  // every open costs nothing and ends the confusion.
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_set_hdr(req, "Referrer-Policy", "no-referrer");
 }
 

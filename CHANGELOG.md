@@ -9,6 +9,17 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.8 — 2026-08-19 — the cube says which system it runs
+
+- **The INFO page shows the OS version.** The bottom line used to show the
+  radio preset — identical on every cube by design, so it answered a question
+  nobody asked. With several cubes and several releases a day, the owner
+  needs the device itself to say which system runs on it.
+- **The panel reports the cube's version, not its own file's.** The footer
+  reads the OS version live from the cube; and the cube now serves its pages
+  with `Cache-Control: no-cache`, because a phone happily kept a panel cached
+  from an older firmware and showed a stale version forever.
+
 ## v0.8.7 — 2026-08-19 — the Wi-Fi word can be yours
 
 - **SETTINGS now has a "cube's Wi-Fi" field.** Two to four plain letters

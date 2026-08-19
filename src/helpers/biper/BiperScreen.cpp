@@ -3,6 +3,7 @@
 #if defined(BIPER_AP) && defined(BIPER_SCREEN)
 
 #include "BiperScreen.h"
+#include "BiperVersion.h"
 #include <NodePrefs.h>
 #include "BiperAp.h"
 #include "BiperApInterface.h"
@@ -566,18 +567,11 @@ static void draw_info_page() {
   }
   draw_text(0, 26, line);
 
-  const NodePrefs* pr = biper_prefs();
-  if (pr != nullptr && pr->freq > 0) {
-    // Round the whole value, then split. Rounding only the fraction has no carry
-    // into the integer part: 868.95 printed as "868.10", a frequency that does
-    // not exist. Standard presets never round up, so the bug waits for a custom
-    // one set from the app.
-    const uint32_t f10 = (uint32_t)(pr->freq * 10.0f + 0.5f);
-    snprintf(line, sizeof(line), "%lu.%lu SF%u", (unsigned long)(f10 / 10),
-             (unsigned long)(f10 % 10), (unsigned)pr->sf);
-  } else {
-    snprintf(line, sizeof(line), "RAM %luk", (unsigned long)(ESP.getFreeHeap() / 1024));
-  }
+// The bottom line used to show the radio preset (869.6 SF8) — identical on
+  // every cube by design, so it answered a question nobody asked. What the
+  // owner actually needs on the device is WHICH SYSTEM RUNS HERE: with several
+  // cubes and several releases a day, versions blur (owner, 19.08 evening).
+  snprintf(line, sizeof(line), "OS %s", BIPER_LAYER_VERSION);
   draw_text(0, 38, line);
 }
 
