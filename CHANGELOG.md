@@ -9,6 +9,25 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.15 — 2026-08-20 — SLYSZE stops lying between adverts, and the word pool doubles
+
+- **The "SLYSZE N" counter and the advert cadence finally agree.** The
+  counter shows neighbours heard in the last 15 minutes, but after the boot
+  advert the next transmission came a full hour later — so a healthy,
+  actively chatting pair spent 45 minutes of every hour truthfully
+  displaying zero. Two fixes, both sides of the same coin: a zero-hop
+  presence beacon every 10 minutes (repeaters do not rebroadcast it, so the
+  wider mesh hears nothing) keeps live neighbours inside the window, and a
+  received direct message now refreshes its sender in the counter — a
+  conversation is the strongest possible proof the other cube is alive.
+- **The station word pool grows from 149 Polish to 294 words.** An English
+  block joins the Polish one — same rules: 3–4 letters, sayable out loud,
+  nothing rude in either language, and nothing that sounds like an existing
+  Polish entry (CRAB~KRAB, THOR~TOR and friends were dropped). Same-batch
+  name collisions fall below half a percent. Note: the update may redraw a
+  cube's DERIVED word (the modulo changed); a word set by the owner in the
+  panel is stored in NVS and never touched.
+
 ## v0.8.14 — 2026-08-20 — messages reach the phone, passwords stop lying to the eye
 
 - **The panel finally understands the cube's message frames.** The panel

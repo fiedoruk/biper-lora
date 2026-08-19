@@ -53,8 +53,16 @@ static const uint32_t BIPER_ADVERT_REPLY_DELAY_MS = 3000;
 static const uint32_t BIPER_ADVERT_MIN_GAP_MS = 10UL * 60UL * 1000UL;
 static const uint32_t BIPER_ADVERT_REPLY_GAP_MS = 60UL * 1000UL;
 static const uint32_t BIPER_ADVERT_PERIOD_MS = 60UL * 60UL * 1000UL;
+// SLYSZE counts a neighbour for 15 minutes, yet the flood advert above comes
+// every 60 — so a healthy, mid-conversation pair honestly displayed zero for
+// 45 minutes of every hour. A ZERO-HOP advert (repeaters do not rebroadcast
+// it, ~0.3 s of airtime at SF8/62.5) every 10 minutes keeps each live
+// neighbour inside the window without feeding the whole mesh. It has its own
+// timer on purpose: it must never delay the flood cadence or the reply gap.
+static const uint32_t BIPER_PRESENCE_PERIOD_MS = 10UL * 60UL * 1000UL;
 static volatile uint32_t biper_advert_reply_at = 0;  // 0 = nothing pending
 static uint32_t biper_advert_last_ms = 0;
+static uint32_t biper_presence_last_ms = 0;
 
 void biper_advert_reply_request() {
   if (biper_advert_reply_at == 0) biper_advert_reply_at = millis() + BIPER_ADVERT_REPLY_DELAY_MS;
@@ -560,6 +568,32 @@ static void biper_ssid_refresh() {
       "DRUT", "NIT",  "MISA", "SITO", "TACA", "BUT",  "PAS",  "SZAL", "TOGA",
       "DAR",  "CZAR", "SEN",  "TON",  "KOC",  "KARO", "KIER", "PIK",  "GOL",
       "KORT", "TOR",  "META", "RAMA", "PLED",
+      // English block (owner request, 20.08): ~150 Polish words alone made
+      // same-batch collisions too likely for the launch runs. Filtered the
+      // same way as above — 3-4 letters A-Z, nothing rude in either language,
+      // and nothing that COLLIDES WITH A POLISH ENTRY when said out loud
+      // (dropped CRAB~KRAB, ORCA~ORKA, THOR~TOR, ROSE~ROSA, KEEL~KIL,
+      // DOME~DOM, WOOD~WODA, PAWN~PAW, SAGE~SAGA, PIKE~PIK). Growing this
+      // list REDRAWS the derived word of an already-flashed cube (fold
+      // modulo changed) — an owner-set word in NVS is untouched. Fine before
+      // launch, a compatibility decision after it.
+      "WOLF", "BEAR", "HAWK", "DOVE", "SWAN", "DEER", "FROG", "FISH", "BIRD",
+      "DUCK", "OWL",  "FOX",  "ANT",  "BEE",  "ELK",  "LION", "LYNX", "MOLE",
+      "SEAL", "TOAD", "WREN", "IBEX", "PONY", "COLT", "CROW", "HARE", "LARK",
+      "TUNA", "KOI",  "ORYX", "NEWT", "STAR", "MOON", "LAKE", "ROCK", "SAND",
+      "SNOW", "RAIN", "WIND", "MIST", "DAWN", "DUSK", "NOON", "EAST", "WEST",
+      "PEAK", "HILL", "CAVE", "GLEN", "VALE", "WAVE", "TIDE", "DUNE", "REEF",
+      "PINE", "OAK",  "FERN", "LILY", "IVY",  "LEAF", "SEED", "ROOT", "TREE",
+      "PALM", "PLUM", "PEAR", "MINT", "CORN", "RICE", "SALT", "GOLD", "IRON",
+      "RUBY", "JADE", "ONYX", "COAL", "CLAY", "FIRE", "GLOW", "BEAM", "RAY",
+      "SUN",  "SKY",  "FOG",  "ICE",  "BOLT", "KITE", "SHIP", "BOAT", "SAIL",
+      "MAST", "DECK", "DOCK", "HELM", "BELL", "DRUM", "HARP", "HORN", "TUBA",
+      "SONG", "TUNE", "BEAT", "JAZZ", "FOLK", "HERO", "KING", "DUKE", "LAMP",
+      "GATE", "ARCH", "ROOF", "PATH", "ROAD", "GRID", "CUBE", "DICE", "ROOK",
+      "ACE",  "NOVA", "VEGA", "LYRA", "ZEUS", "ODIN", "LOKI", "YETI", "PUCK",
+      "WAND", "RUNE", "MYTH", "EPIC", "TALE", "POEM", "PAGE", "INK",  "CODE",
+      "BYTE", "CHIP", "LINK", "NODE", "PING", "VOLT", "WATT", "OHM",  "ATOM",
+      "ION",
   };
   const uint64_t mac = ESP.getEfuseMac();
   const uint16_t fold = (uint16_t)(mac ^ (mac >> 16) ^ (mac >> 32) ^ (mac >> 48));
@@ -752,6 +786,16 @@ static void biper_ap_task(void*) {
     if (advert_done && biper_forwarding() && biper_advert_last_ms != 0 &&
         t_now - biper_advert_last_ms >= BIPER_ADVERT_PERIOD_MS) {
       send_advert("periodic");
+    }
+    // Presence beacon (zero-hop): see BIPER_PRESENCE_PERIOD_MS. First one
+    // fires ~10 min after boot; switching SAM back to SIEC sends one at once,
+    // so the cube reappears on neighbours' screens the moment it rejoins.
+    if (advert_done && biper_forwarding() &&
+        t_now - biper_presence_last_ms >= BIPER_PRESENCE_PERIOD_MS) {
+      biper_presence_last_ms = t_now;
+      static const uint8_t PRESENCE[] = {7, 0};  // CMD_SEND_SELF_ADVERT, zero-hop
+      biper_ap_interface()->onClientFrame(PRESENCE, sizeof(PRESENCE));
+      Serial.printf("[BIPER] advert sent (presence)\n");
     }
     if (biper_toggle_req) {
       biper_toggle_req = false;

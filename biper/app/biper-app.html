@@ -70,7 +70,11 @@ main{flex:1;overflow-y:auto;z-index:1;
   /* Bez tego scrollIntoView({block:"end"}) stawia dol wiadomosci rowno
      z dolem okna, czyli POD paskiem pisania i nawigacja. */
   scroll-padding-bottom:calc(var(--pasek-h,0px) + var(--nav-h,64px) + var(--klawiatura,0px) + 12px);
-  padding:0 16px calc(66px + env(safe-area-inset-bottom))}
+  /* Przeciagniecie w dol na Androidzie odswiezalo panel w srodku rozmowy. */
+  overscroll-behavior-y:contain;
+  /* Dol rezerwujemy pod ZMIERZONA nawigacje (--nav-h), nie stala: nav ma
+     realnie ~73 px i sztywne 66 chowalo ostatnia linie kazdego ekranu. */
+  padding:0 16px calc(var(--nav-h,64px) + env(safe-area-inset-bottom) + 16px)}
 section{display:none;max-width:30rem;margin:0 auto}
 section.on{display:block}
 /* every section label speaks the same way; only size and margin are local */
@@ -117,7 +121,6 @@ section.on{display:block}
 .podpis{margin:26px 4px 8px;padding-top:16px;border-top:2px solid var(--line);
   font-size:12px;line-height:1.7;color:var(--dim);text-align:center}
 .podpis b{color:var(--ink)}
-body.pisze .feed{padding-bottom:calc(var(--pasek-h,150px) + var(--klawiatura,0px) + 12px)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 /* Wstrzymany alarm: przerywana obwodka i inne slowo. Stan niesie KSZTALT,
    nie sama barwe — ta sama zasada co przy stemplach wiadomosci. */
@@ -204,8 +207,12 @@ body.pisze .feed{padding-bottom:calc(var(--pasek-h,150px) + var(--klawiatura,0px
   background:var(--panel2);border-top:2px solid var(--line);z-index:3}
 .chatbar.on{display:flex}
 /* Kanal musi konczyc sie NAD paskiem pisania, inaczej ostatnia wiadomosc —
-   czyli ta, na ktorej najbardziej zalezy — chowa sie pod polem tekstowym. */
-body.pisze .feed{padding-bottom:calc(var(--pasek-h, 150px) + 12px)}
+   czyli ta, na ktorej najbardziej zalezy — chowa sie pod polem tekstowym.
+   ZAWSZE, nie tylko przy pisaniu: przy recznym przewinieciu na sam dol
+   scroll-padding nie dziala i ogon rozmowy ladowal pod paskiem. Byly tez
+   dwie kopie tej reguly — pozniejsza, BEZ --klawiatura, wygrywala kaskade
+   i klawiatura telefonu zaslaniala ostatnia wiadomosc. Jedna regula. */
+.feed{padding-bottom:calc(var(--pasek-h, 150px) + var(--klawiatura, 0px) + 12px)}
 .chatbar .wiersz{display:flex;gap:8px}
 /* Gotowe zwroty: pod stresem, w rekawiczkach, w nocy — pisanie jest najgorszym
    z mozliwych interfejsow. Jedno dotkniecie zamiast dwudziestu, i krotsza
@@ -235,7 +242,9 @@ body.pisze .feed{padding-bottom:calc(var(--pasek-h, 150px) + 12px)}
 /* Pusty kanal mowi, co zrobic — zamiast pokazywac pustke. */
 .pusto{padding:40px 24px;text-align:center;color:var(--dim);font-size:15px;line-height:1.6}
 .pusto b{display:block;color:var(--ink);font-family:var(--f-dsp);font-size:17px;margin-bottom:8px}
-.chatbar input{flex:1;background:var(--bg);padding:0 12px}
+/* min-width:0 — flex nie kurczy pola ponizej szerokosci PLACEHOLDERA
+   (min-width:auto), wiec na 320 px przycisk NADAJ wyjezdzal za ekran. */
+.chatbar input{flex:1;min-width:0;background:var(--bg);padding:0 12px}
 .chatbar input:focus{border-color:var(--hot-ink)}
 .chatbar button{background:var(--hot);border:0;border-radius:8px;color:#0a0d11;
   font:400 14px var(--f-dsp);padding:0 20px;min-height:64px;letter-spacing:.06em;
@@ -541,7 +550,7 @@ var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:
   eter_slychac:"%n świeżych",p_slychac:"słychać teraz",p_ostatni:"ostatni sygnał",
   p_snr:"jakość odbioru",p_zdarzen:"zdarzeń w eterze",p_lacze:"łącze z kostką",
   p_zasilanie:"zasilanie",sent:"NADANO",confirmed:"DOSZŁO",
-  heard_ago:"słyszany %t temu",heard_now:"słyszany przed chwilą",path_direct:"bezpośrednio",path_nieznana:"trasa nieznana",
+  heard_ago:"słychać było %t temu",heard_now:"słychać przed chwilą",path_direct:"bezpośrednio",path_nieznana:"trasa nieznana",
   path_hops:"%n przesk.",just:"teraz",min_ago:"%n min",hrs_ago:"%n godz.",
   sos_bez_lacza:"<b>Alarm wstrzymany</b> — nie ma łączności z kostką. Sprawdź, czy jej hotspot działa; próbuję dalej.",cancel_bez_lacza:"<b>Nie odwołano</b> — nie ma łączności z kostką. Alarm nadal jest uzbrojony.",
     sos_text:"POMOC! Potrzebuję pomocy.",cancel_text:"Odwołuję alarm - jestem bezpieczny.",
@@ -1202,7 +1211,7 @@ function odczytajStan(){
       $("f-wifi").value=String(d.ssid).replace(/^Biper-/,"");
     /* Wersja z KOSTKI, nie z pliku panelu: przy kilku kostkach i kilku
        wydaniach dziennie czlowiek musi widziec, ktory system tu dziala. */
-    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.11 / K5";
+    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.12 / K5";
   }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
 }
 
@@ -1443,7 +1452,7 @@ $("f-lang").onchange=function(){ustawJezyk(this.value)};
   if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
   if(j!==lang)ustawJezyk(j);
 })();
-$("ver").textContent="Biper panel v0.11 / K5 \u00b7 OS: \u2014";
+$("ver").textContent="Biper panel v0.12 / K5 \u00b7 OS: \u2014";
 /* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
    UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
    przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja

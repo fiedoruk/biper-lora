@@ -16,6 +16,8 @@
 static const uint8_t CMD_SEND_DM        = 2;     // CMD_SEND_TXT_MSG
 static const uint8_t CMD_SEND_CHANNEL   = 3;     // CMD_SEND_CHANNEL_TXT_MSG
 static const uint8_t RESP_SENT          = 6;     // RESP_CODE_SENT
+static const uint8_t RESP_DM_OLD        = 7;     // RESP_CODE_CONTACT_MSG_RECV: [7][pub6]...
+static const uint8_t RESP_DM_V3         = 16;    // ..._V3: [16][snr][r1][r2][pub6]...
 static const uint8_t PUSH_CONFIRMED     = 0x82;  // PUSH_CODE_SEND_CONFIRMED
 static const uint8_t PUSH_MSG_WAITING   = 0x83;  // PUSH_CODE_MSG_WAITING
 static const uint8_t PUSH_ADVERT        = 0x80;  // PUSH_CODE_ADVERT: [0x80][pub_key]
@@ -135,6 +137,13 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
     // single advert in either direction completes the pair.
     if (src[0] == PUSH_NEW_ADVERT) biper_advert_reply_request();
   }
+  // A direct message IS hearing its sender. The counter used to listen only to
+  // adverts, so two cubes in mid-conversation could still show SLYSZE 0 — the
+  // one moment the owner is SURE the neighbour is alive. Channel frames (8/17)
+  // carry no public key and stay out; sync of an old offline backlog may
+  // refresh a stale sender once, which self-corrects within one window.
+  else if (src[0] == RESP_DM_OLD && len >= 7) note_advert(&src[1]);
+  else if (src[0] == RESP_DM_V3 && len >= 10) note_advert(&src[4]);
   // State for the cube's screen. The guard (is this a consequence of OUR
   // transmission, and does a confirmation exist at all for this kind of send)
   // sits in biper_face_set() — here we only report what we saw in the frame.
