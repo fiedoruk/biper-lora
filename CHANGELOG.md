@@ -9,6 +9,21 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.10 — 2026-08-19 — discovery no longer hinges on one 45-second window
+
+- **A cube answers a new neighbour with its own advert.** Discovery used to
+  depend on a single advert 45 seconds after boot — flash two cubes one
+  after the other and the first one's only announcement flies while the
+  second is still in the bootloader; the pair then never finds itself
+  (owner's evening test; verified end-to-end on the bench over a USB
+  companion probe: protocol, clock, contact sync and radio RX all healthy,
+  contacts empty purely for lack of a second advert). Now hearing a NEW
+  node triggers our own flood advert after three seconds, so one advert in
+  either direction completes the pair.
+- **A periodic re-advert every hour** heals any missed window and keeps
+  neighbours' "last heard" honest. Both mechanisms share a ten-minute rate
+  limit; SAM stays silent, as always.
+
 ## v0.8.9 — 2026-08-19 — the panel link recovers by itself, the clock becomes real
 
 - **The newest phone takes over the panel.** The bridge used to refuse a

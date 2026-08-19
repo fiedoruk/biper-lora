@@ -4,6 +4,7 @@
 
 #include "BiperApInterface.h"
 #include "BiperScreen.h"
+#include "BiperAp.h"
 
 #include <Arduino.h>
 #include <esp_http_server.h>
@@ -126,8 +127,14 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   // FIRST time arrives as 0x8A, never 0x80 — counting only 0x80 meant the
   // counter missed the exact moment two fresh cubes met: each discovered the
   // other and both screens kept saying SLYSZE 0.
-  else if ((src[0] == PUSH_ADVERT || src[0] == PUSH_NEW_ADVERT) && len >= 5)
+  else if ((src[0] == PUSH_ADVERT || src[0] == PUSH_NEW_ADVERT) && len >= 5) {
     note_advert(&src[1]);
+    // A NEWLY discovered neighbour has us in range but almost certainly does
+    // not have US yet — its one boot advert may have flown while we were
+    // still flashing. Ask the AP task to answer with our own advert, so a
+    // single advert in either direction completes the pair.
+    if (src[0] == PUSH_NEW_ADVERT) biper_advert_reply_request();
+  }
   // State for the cube's screen. The guard (is this a consequence of OUR
   // transmission, and does a confirmation exist at all for this kind of send)
   // sits in biper_face_set() — here we only report what we saw in the frame.

@@ -45,6 +45,19 @@ static const uint32_t BIPER_AP_IDLE_POLL_MS = 50;
 // on before its antenna is screwed on from transmitting immediately. SAM
 // stays silent: whoever chose not to relay also chose not to be announced.
 static const uint32_t BIPER_ADVERT_BOOT_MS = 45000;
+// Discovery must not hinge on one 45-second window: an advert-REPLY (a new
+// neighbour appeared — answer so they get us too) goes out after this delay,
+// and a periodic re-advert heals any missed window and keeps "last heard"
+// honest. Both respect one shared rate limit.
+static const uint32_t BIPER_ADVERT_REPLY_DELAY_MS = 3000;
+static const uint32_t BIPER_ADVERT_MIN_GAP_MS = 10UL * 60UL * 1000UL;
+static const uint32_t BIPER_ADVERT_PERIOD_MS = 60UL * 60UL * 1000UL;
+static volatile uint32_t biper_advert_reply_at = 0;  // 0 = nothing pending
+static uint32_t biper_advert_last_ms = 0;
+
+void biper_advert_reply_request() {
+  if (biper_advert_reply_at == 0) biper_advert_reply_at = millis() + BIPER_ADVERT_REPLY_DELAY_MS;
+}
 // Probe handlers cannot read biper_ap_window()'s local softAPIP();
 // 192.168.4.1 is the ESP32 SoftAP default.
 static const char BIPER_AP_PORTAL_URL[] = "http://192.168.4.1/";
@@ -691,17 +704,34 @@ static void biper_ap_window() {
 static void biper_ap_task(void*) {
   vTaskDelay(pdMS_TO_TICKS(BIPER_AP_BOOT_DELAY_MS));
   bool advert_done = false;
+  auto send_advert = [](const char* why) {
+    // Same frame the panel's ROZGLOS button sends: flood self-advert.
+    static const uint8_t ADVERT[] = {7, 1};  // CMD_SEND_SELF_ADVERT
+    biper_ap_interface()->onClientFrame(ADVERT, sizeof(ADVERT));
+    biper_advert_last_ms = millis();
+    Serial.printf("[BIPER] advert sent (%s)\n", why);
+  };
   for (;;) {
-    if (!advert_done && millis() >= BIPER_ADVERT_BOOT_MS) {
+    const uint32_t t_now = millis();
+    if (!advert_done && t_now >= BIPER_ADVERT_BOOT_MS) {
       advert_done = true;
-      if (biper_forwarding()) {
-        // Same frame the panel's ROZGLOS button sends: flood self-advert.
-        static const uint8_t ADVERT[] = {7, 1};  // CMD_SEND_SELF_ADVERT
-        biper_ap_interface()->onClientFrame(ADVERT, sizeof(ADVERT));
-        Serial.printf("[BIPER] boot advert sent (SIEC)\n");
-      } else {
-        Serial.printf("[BIPER] boot advert skipped (SAM)\n");
+      if (biper_forwarding()) send_advert("boot");
+      else Serial.printf("[BIPER] boot advert skipped (SAM)\n");
+    }
+    // Advert-reply: a new neighbour appeared; answer once the short delay
+    // passes, unless we have advertised recently anyway.
+    if (biper_advert_reply_at != 0 && t_now >= biper_advert_reply_at) {
+      biper_advert_reply_at = 0;
+      if (biper_forwarding() && (biper_advert_last_ms == 0 ||
+          t_now - biper_advert_last_ms >= BIPER_ADVERT_MIN_GAP_MS)) {
+        send_advert("reply");
       }
+    }
+    // Periodic re-advert: heals a missed boot window (the pair problem) and
+    // keeps neighbours' "last heard" honest. SIEC only; SAM stays silent.
+    if (advert_done && biper_forwarding() && biper_advert_last_ms != 0 &&
+        t_now - biper_advert_last_ms >= BIPER_ADVERT_PERIOD_MS) {
+      send_advert("periodic");
     }
     if (biper_toggle_req) {
       biper_toggle_req = false;

@@ -68,3 +68,7 @@ bool biper_forwarding();
 bool biper_forwarding_toggle();
 // Clears the remembered choice — called by the factory-reset wipe.
 void biper_ap_forget();
+
+// Bridge -> AP task: a NEW neighbour was discovered; answer with our own
+// advert after a short delay (rate-limited in the task).
+void biper_advert_reply_request();
