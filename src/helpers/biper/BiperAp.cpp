@@ -50,9 +50,19 @@ static const uint32_t BIPER_ADVERT_BOOT_MS = 45000;
 static const char BIPER_AP_PORTAL_URL[] = "http://192.168.4.1/";
 static const char BIPER_AP_IP_STR[] = "192.168.4.1";
 
-// Forward declarations: both functions are used above their definitions.
+// Forward declarations: these are used above their definitions.
 static bool from_the_cube(httpd_req_t* req);
 static void security_headers(httpd_req_t* req);
+static void biper_ssid_refresh();
+
+static Preferences biper_nvs;
+// The stored key stays "siec" ("network"): it is on flash in every cube already
+// shipped, and renaming it would silently reset their choice on the next update.
+static const char* NVS_NAMESPACE = "biper";
+static const char* NVS_FORWARD = "siec";
+static const char* NVS_PASS = "haslo";  // the cube's fixed hotspot password
+static const char* NVS_WORD = "slowo";  // owner-chosen Wi-Fi word (else derived)
+
 
 static DNSServer biper_dns;
 static httpd_handle_t biper_httpd = nullptr;
@@ -323,6 +333,31 @@ static esp_err_t font_get(httpd_req_t* req) {
   return httpd_resp_send(req, nullptr, 0);
 }
 
+// The owner picks the Wi-Fi word: POST /nazwa with 2-4 letters (case-free),
+// empty body returns to the drawn word. Origin-guarded like the panel; the
+// word is validated to A-Z before it can reach an SSID or the OLED.
+static esp_err_t nazwa_post(httpd_req_t* req) {
+  if (!from_the_cube(req)) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad host");
+  security_headers(req);
+  char buf[8] = {0};
+  const int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+  if (len < 0) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "read failed");
+  if (len == 0) {
+    biper_nvs.remove(NVS_WORD);
+  } else {
+    if (len < 2 || len > 4) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "2-4 letters");
+    for (int i = 0; i < len; i++) {
+      if (buf[i] >= 'a' && buf[i] <= 'z') buf[i] = (char)(buf[i] - 'a' + 'A');
+      if (buf[i] < 'A' || buf[i] > 'Z') return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "letters only");
+    }
+    biper_nvs.putString(NVS_WORD, buf);
+  }
+  biper_ssid_refresh();
+  Serial.printf("[BIPER_AP] wifi word %s\n", len == 0 ? "reset" : "set");
+  httpd_resp_set_type(req, "text/plain; charset=utf-8");
+  return httpd_resp_send(req, biper_state.ssid, HTTPD_RESP_USE_STRLEN);
+}
+
 // Captive probes: a redirect makes Android/Windows pop the sign-in sheet.
 static esp_err_t redirect_get(httpd_req_t* req) {
   httpd_resp_set_status(req, "302 Found");
@@ -424,6 +459,7 @@ static bool biper_httpd_start() {
       {"/", HTTP_GET, page_get, nullptr, false, false, nullptr},
       {"/en", HTTP_GET, page_get, BIPER_LANG_EN, false, false, nullptr},
       {"/stan", HTTP_GET, state_get, nullptr, false, false, nullptr},
+      {"/nazwa", HTTP_POST, nazwa_post, nullptr, false, false, nullptr},
       {"/app", HTTP_GET, app_get, nullptr, false, false, nullptr},
       {"/ws", HTTP_GET, ws_handler, nullptr, true, false, nullptr},
       {"/f/*", HTTP_GET, font_get, nullptr, false, false, nullptr},
@@ -451,12 +487,59 @@ static void biper_httpd_stop() {
   }
 }
 
-static Preferences biper_nvs;
-// The stored key stays "siec" ("network"): it is on flash in every cube already
-// shipped, and renaming it would silently reset their choice on the next update.
-static const char* NVS_NAMESPACE = "biper";
-static const char* NVS_FORWARD = "siec";
-static const char* NVS_PASS = "haslo";  // the cube's fixed hotspot password
+
+// Owner request (19.08, evening): the word after "Biper-" can be YOURS. A
+// valid stored word (2-4 letters A-Z, NVS) wins over the derived one; a wipe
+// or an empty POST /nazwa returns the cube to its drawn word. Recomputed at
+// every window open, so a change applies from the NEXT window without
+// dropping the current guests mid-session.
+static void biper_ssid_refresh() {
+  char wybor[8] = {0};
+  const size_t wl = biper_nvs.getString(NVS_WORD, wybor, sizeof(wybor));
+  bool ok = wl >= 2 && wl <= 4;
+  for (size_t i = 0; ok && i < wl; i++) ok = wybor[i] >= 'A' && wybor[i] <= 'Z';
+  if (ok) {
+    snprintf(biper_state.ssid, sizeof(biper_state.ssid), "Biper-%s", wybor);
+    return;
+  }
+  // The cube introduces itself with a WORD, not hex (owner decision, 19 Aug:
+  // digits are easy to confuse between two cubes and impossible to say out
+  // loud — "join Biper-SOWA" works, "Biper-3F2A" does not). The word comes
+  // from folding ALL the efuse bits: the old code printed bits 32-47, and on
+  // the C6 the efuse identifier is an EUI-64 whose constant FF:FE filler plus
+  // a batch octet sit exactly in that slice — the owner's whole pair announced
+  // the same Biper-15FE hotspot. An XOR fold lets any differing octet reach
+  // the name, wherever the unique bytes live.
+  //
+  // Words are 3-4 letters for a reason: 64 px of OLED show ten 6-px glyphs,
+  // so "Biper-" plus four letters is the longest SSID the screen can carry
+  // without touching the drawing code (and its pixel-parity gate). With ~150
+  // words two cubes of one batch can still draw the same name (<1%); if that
+  // ever bites, the fix is a second word, not digits.
+  static const char* const NAME_WORDS[] = {
+      "SOWA", "WILK", "RYBA", "FOKA", "KRAB", "KRET", "KURA", "KOZA", "PUMA",
+      "LAMA", "ORKA", "KIWI", "DROP", "IBIS", "MEWA", "KRUK", "MYSZ", "LIS",
+      "KOT",  "OSA",  "RAK",  "SUM",  "EMU",  "LEW",  "PAW",  "BYK",  "TUR",
+      "KUC",  "GIL",  "KOS",  "KUNA", "MORS", "KARP", "KRYL", "ARA",  "GNU",
+      "REN",  "SZOP", "DODO", "MOA",  "KEA",  "LIN",  "SOLA", "BOA",  "LORI",
+      "NEON", "KLON", "LIPA", "BUK",  "GRAB", "CIS",  "BEZ",  "MAK",  "LEN",
+      "IRYS", "FIGA", "CEDR", "MECH", "KORA", "OWOC", "TORF", "KRA",  "SAD",
+      "WOSK", "FALA", "LAWA", "RAFA", "JAR",  "WODA", "ROSA", "GRAD", "LUNA",
+      "MARS", "KLIF", "STEP", "LAS",  "GAJ",  "POLE", "STAW", "ATOL", "URAN",
+      "DOM",  "DACH", "OKNO", "MOST", "STER", "LINA", "KNOT", "FLET", "KOSZ",
+      "KULA", "NORA", "MAPA", "LUPA", "GAMA", "NUTA", "RYTM", "ECHO", "ROMB",
+      "AGAT", "OPAL", "MIKA", "CYNA", "CYNK", "SMOK", "GNOM", "ELF",  "GRYF",
+      "PORT", "MOLO", "FORT", "PROM", "TAMA", "BOJA", "GROT", "TRAP", "KIL",
+      "RUFA", "REJA", "SER",  "JUTA", "SAGA", "RUNO", "HAK",  "PION", "KLIN",
+      "DRUT", "NIT",  "MISA", "SITO", "TACA", "BUT",  "PAS",  "SZAL", "TOGA",
+      "DAR",  "CZAR", "SEN",  "TON",  "KOC",  "KARO", "KIER", "PIK",  "GOL",
+      "KORT", "TOR",  "META", "RAMA", "PLED",
+  };
+  const uint64_t mac = ESP.getEfuseMac();
+  const uint16_t fold = (uint16_t)(mac ^ (mac >> 16) ^ (mac >> 32) ^ (mac >> 48));
+  snprintf(biper_state.ssid, sizeof(biper_state.ssid), "Biper-%s",
+           NAME_WORDS[fold % (sizeof(NAME_WORDS) / sizeof(NAME_WORDS[0]))]);
+}
 
 // ---------------------------------------------------------------------------
 // AP window state machine (own task)
@@ -465,6 +548,8 @@ static const char* NVS_PASS = "haslo";  // the cube's fixed hotspot password
 static void biper_ap_window() {
   const uint32_t heap_before = ESP.getFreeHeap();
   const uint32_t t_start = millis();
+
+  biper_ssid_refresh();
 
   WiFi.mode(WIFI_AP);
 #ifdef BIPER_AP_OPEN
@@ -649,6 +734,7 @@ bool biper_forwarding_toggle() {
 void biper_ap_forget() {
   biper_nvs.remove(NVS_FORWARD);
   biper_nvs.remove(NVS_PASS);
+  biper_nvs.remove(NVS_WORD);
   Serial.printf("[BIPER] repeat+pass=forgotten (factory)\n");
 }
 bool biper_forwarding() {
@@ -713,43 +799,7 @@ void biper_ap_setup(NodePrefs* prefs, MultiSerialInterface* manager) {
     biper_ap_interface()->enable();
   }
 
-  // The cube introduces itself with a WORD, not hex (owner decision, 19 Aug:
-  // digits are easy to confuse between two cubes and impossible to say out
-  // loud — "join Biper-SOWA" works, "Biper-3F2A" does not). The word comes
-  // from folding ALL the efuse bits: the old code printed bits 32-47, and on
-  // the C6 the efuse identifier is an EUI-64 whose constant FF:FE filler plus
-  // a batch octet sit exactly in that slice — the owner's whole pair announced
-  // the same Biper-15FE hotspot. An XOR fold lets any differing octet reach
-  // the name, wherever the unique bytes live.
-  //
-  // Words are 3-4 letters for a reason: 64 px of OLED show ten 6-px glyphs,
-  // so "Biper-" plus four letters is the longest SSID the screen can carry
-  // without touching the drawing code (and its pixel-parity gate). With ~150
-  // words two cubes of one batch can still draw the same name (<1%); if that
-  // ever bites, the fix is a second word, not digits.
-  static const char* const NAME_WORDS[] = {
-      "SOWA", "WILK", "RYBA", "FOKA", "KRAB", "KRET", "KURA", "KOZA", "PUMA",
-      "LAMA", "ORKA", "KIWI", "DROP", "IBIS", "MEWA", "KRUK", "MYSZ", "LIS",
-      "KOT",  "OSA",  "RAK",  "SUM",  "EMU",  "LEW",  "PAW",  "BYK",  "TUR",
-      "KUC",  "GIL",  "KOS",  "KUNA", "MORS", "KARP", "KRYL", "ARA",  "GNU",
-      "REN",  "SZOP", "DODO", "MOA",  "KEA",  "LIN",  "SOLA", "BOA",  "LORI",
-      "NEON", "KLON", "LIPA", "BUK",  "GRAB", "CIS",  "BEZ",  "MAK",  "LEN",
-      "IRYS", "FIGA", "CEDR", "MECH", "KORA", "OWOC", "TORF", "KRA",  "SAD",
-      "WOSK", "FALA", "LAWA", "RAFA", "JAR",  "WODA", "ROSA", "GRAD", "LUNA",
-      "MARS", "KLIF", "STEP", "LAS",  "GAJ",  "POLE", "STAW", "ATOL", "URAN",
-      "DOM",  "DACH", "OKNO", "MOST", "STER", "LINA", "KNOT", "FLET", "KOSZ",
-      "KULA", "NORA", "MAPA", "LUPA", "GAMA", "NUTA", "RYTM", "ECHO", "ROMB",
-      "AGAT", "OPAL", "MIKA", "CYNA", "CYNK", "SMOK", "GNOM", "ELF",  "GRYF",
-      "PORT", "MOLO", "FORT", "PROM", "TAMA", "BOJA", "GROT", "TRAP", "KIL",
-      "RUFA", "REJA", "SER",  "JUTA", "SAGA", "RUNO", "HAK",  "PION", "KLIN",
-      "DRUT", "NIT",  "MISA", "SITO", "TACA", "BUT",  "PAS",  "SZAL", "TOGA",
-      "DAR",  "CZAR", "SEN",  "TON",  "KOC",  "KARO", "KIER", "PIK",  "GOL",
-      "KORT", "TOR",  "META", "RAMA", "PLED",
-  };
-  const uint64_t mac = ESP.getEfuseMac();
-  const uint16_t fold = (uint16_t)(mac ^ (mac >> 16) ^ (mac >> 32) ^ (mac >> 48));
-  snprintf(biper_state.ssid, sizeof(biper_state.ssid), "Biper-%s",
-           NAME_WORDS[fold % (sizeof(NAME_WORDS) / sizeof(NAME_WORDS[0]))]);
+  biper_ssid_refresh();
 #ifdef BIPER_SCREEN
   biper_screen_start();
 #endif

@@ -60,7 +60,7 @@ Bluetooth. Everything below is what Biper adds on top, all of it in
 | **A screen language** | 64 × 48 pixels, one bit deep. Six states, each an animated field rather than a word: at rest the field flows and carries `BIPER`, and its speed is the density of the mesh around you. Ported to the website pixel-for-pixel and kept honest by a gate that compiles the firmware's own drawing functions and diffs the frames. |
 | **One button, five gestures** | Click cycles the screen. Double click is silence and darkness. Triple click switches whether the cube relays other people's traffic. Three seconds brings up a Wi-Fi hotspot. Ten seconds wipes the cube, counting down from the fourth second so nobody wipes one by leaning on it. |
 | **A relay switch that survives a restart** | Two modes, both named for what they do — `SIEC` (Polish for „network”) carries other people's messages onward; `SAM` („on your own”) transmits only yours. The cube has no battery, so a nudged cable is a reboot — the choice is stored in NVS, and the screen says which mode is on. |
-| **A panel served from the cube's own flash** | Hold the button, join the cube's Wi-Fi, and the phone becomes a screen and a keyboard. No account, no app store, no internet. 85 kB of HTML, 31.6 kB (32354 bytes) over the air after gzip. It carries a built-in guide, so the manual is inside the device. |
+| **A panel served from the cube's own flash** | Hold the button, join the cube's Wi-Fi, and the phone becomes a screen and a keyboard. No account, no app store, no internet. 86 kB of HTML, 32.1 kB (32891 bytes) over the air after gzip. It carries a built-in guide, so the manual is inside the device. |
 | **A voice and a light** | Two or three notes per event, never a jingle. One addressable LED whose behaviour is documented next to the code that drives it — including the fact that ninja mode really does go dark, and that the radio keeps transmitting while it does. |
 | **Custody of the device** | Origin guard on the WebSocket bridge, a fresh eight-character Wi-Fi password for every hotspot window (31-symbol alphabet chosen to be copyable off a 64 × 48 screen), the pairing PIN visible only inside a pairing window, private-key export compiled out — identity is disposable by design, contacts restore from the panel's local backup — and security headers on everything the cube serves. |
 
@@ -148,7 +148,7 @@ stock app slot.
 This is the part a reviewer should check first.
 
 ```
-49 files changed, 12074 insertions(+), 359 deletions(-)   # vs MeshCore companion-v1.17.1, as of 19 Aug 2026
+49 files changed, 12181 insertions(+), 359 deletions(-)   # vs MeshCore companion-v1.17.1, as of 19 Aug 2026
 ```
 
 Of those lines  about 7 000 sit in two generated headers — the gzipped panel

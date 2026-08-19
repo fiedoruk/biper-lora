@@ -9,6 +9,15 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.7 — 2026-08-19 — the Wi-Fi word can be yours
+
+- **SETTINGS now has a "cube's Wi-Fi" field.** Two to four plain letters
+  after "Biper-" — `Biper-ELF` instead of the drawn word, applied from the
+  next hotspot window so the current session is not dropped. An empty field
+  returns to the drawn word; a wipe clears the choice too. The word is
+  validated to A-Z on the cube before it can reach an SSID or the OLED.
+  Panel component v0.8.
+
 ## v0.8.6 — 2026-08-19 — the contacts are called contacts
 
 - **The panel tab WĘZŁY is now KONTAKTY (NODES → CONTACTS).** The owner —

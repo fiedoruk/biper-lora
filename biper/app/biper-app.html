@@ -417,6 +417,12 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
     <input class="f mono" id="f-name" maxlength="30">
     <button class="btn" id="b-name" data-k="b_save">ZAPISZ</button>
     <button class="btn" id="b-adv" data-k="b_adv">ROZGLOS (ADVERT)</button>
+    <label class="f" for="f-wifi" data-k="f_wifi">WI-FI KOSTKI</label>
+    <div class="frame">
+      <div class="kv"><b class="mono">Biper-</b><input class="f mono" id="f-wifi" maxlength="4" autocapitalize="characters" autocomplete="off" style="width:7ch;display:inline-block;margin:0"></div>
+      <p style="color:var(--dim);font-size:12px;margin:8px 0 0" data-k="wifi_note">2–4 litery bez ogonków. Nowa nazwa od następnego okna hotspotu; puste pole wraca do wylosowanej.</p>
+    </div>
+    <button class="btn" id="b-wifi" data-k="b_wifi">ZAPISZ NAZWĘ WI-FI</button>
     <label class="f" for="f-theme" data-k="f_theme">MOTYW</label>
     <select class="f" id="f-theme">
       <option value="dark" data-k="o_dark">ciemny</option>
@@ -499,7 +505,7 @@ function hops(n){
 function hhmm(){var d=new Date();return pad2(d.getHours())+":"+pad2(d.getMinutes())}
 /* ===== i18n ===== */
 var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:"radio",
-  k_ack:"odezwało się sąsiadów",err:"nie poszło",f_name:"TWOJA NAZWA",b_save:"ZAPISZ",b_adv:"ROZGŁOŚ SIĘ SĄSIADOM",
+  k_ack:"odezwało się sąsiadów",err:"nie poszło",f_name:"TWOJA NAZWA",b_save:"ZAPISZ",b_adv:"ROZGŁOŚ SIĘ SĄSIADOM",f_wifi:"WI-FI KOSTKI",b_wifi:"ZAPISZ NAZWĘ WI-FI",wifi_note:"2–4 litery bez ogonków. Nowa nazwa od następnego okna hotspotu; puste pole wraca do wylosowanej.",wifi_ok:"od następnego okna",wifi_zle:"tylko litery A–Z (2–4)",
   f_theme:"MOTYW",o_dark:"ciemny",o_light:"jasny",t_help:"POMOC",t_chat:"KANAŁ",
   t_nodes:"KONTAKTY",a_zamknij:"zamknij",a_wstecz:"wstecz",a_radar:"Drabina przeskoków słyszanych kostek",a_os:"Aktywność w ostatniej godzinie",e_kto:"Kto jest wokoło",e_godzina:"Ostatnia godzina w eterze",e_przyrzady:"Przyrządy",e_legenda:"Biper nie zna kierunku ani odległości — to nie jest mapa",e_60:"60 min temu",e_teraz:"teraz",
     t_info:"PORADNIK",
@@ -541,7 +547,7 @@ var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:
   pusto_t:"Cicho na kanale",
   pusto_p:"Nikt jeszcze nic nie napisał. Napisz pierwszy — usłyszą Cię wszyscy w zasięgu."},
 en:{sos_sub:"I need help",h_node:"NODE",k_name:"name",k_radio:"radio",
-  k_ack:"neighbours heard from",err:"not sent",f_name:"YOUR NAME",b_save:"SAVE",b_adv:"ANNOUNCE TO NEIGHBOURS",
+  k_ack:"neighbours heard from",err:"not sent",f_name:"YOUR NAME",b_save:"SAVE",b_adv:"ANNOUNCE TO NEIGHBOURS",f_wifi:"CUBE\u2019S WI-FI",b_wifi:"SAVE WI-FI NAME",wifi_note:"2\u20134 plain letters. The new name applies from the next hotspot window; an empty field returns to the drawn one.",wifi_ok:"from the next window",wifi_zle:"letters A\u2013Z only (2\u20134)",
   f_theme:"THEME",o_dark:"dark",o_light:"light",t_help:"HELP",t_chat:"CHANNEL",
   f_tryb:"RADIO MODE",tryb_czekam:"reading from the cube…",tryb_siec:"carries other people's messages onward",tryb_sam:"transmits only yours",tryb_gest:"Changed with three clicks of the button on the cube.",
   t_nodes:"CONTACTS",a_zamknij:"close",a_wstecz:"back",a_radar:"Hop ladder of audible cubes",a_os:"Activity in the last hour",e_kto:"Who is around",e_godzina:"The last hour on the air",e_przyrzady:"Instruments",e_legenda:"Biper knows no direction or distance — this is not a map",e_60:"60 min ago",e_teraz:"now",
@@ -1146,6 +1152,8 @@ function odczytajStan(){
       ? (min>0 ? tr("hotspot_zostalo").replace("%n",min) : tr("hotspot_krotko"))
       : (d.ssid||"—");
     $("s-uwaga").textContent = d.hotspot_s>0 ? tr("stan_okno") : "";
+    if($("f-wifi") && d.ssid && !$("f-wifi").value && document.activeElement!==$("f-wifi"))
+      $("f-wifi").value=String(d.ssid).replace(/^Biper-/,"");
   }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
 }
 
@@ -1328,6 +1336,13 @@ $("b-name").onclick=function(){
   sendName(v);selfName=v;
   $("v-name").textContent=v;
   flashLabel(btn,tr("saved"),"b_save")};
+$("b-wifi").onclick=function(){
+  var self=this, w=$("f-wifi").value.trim().toUpperCase();
+  if(w && !/^[A-Z]{2,4}$/.test(w)){flashLabel(self,tr("wifi_zle"),"b_wifi");return}
+  fetch("/nazwa",{method:"POST",body:w}).then(function(r){
+    if(!r.ok)throw 0;
+    flashLabel(self,tr("wifi_ok"),"b_wifi");powiedz(tr("wifi_ok"));
+  }).catch(function(){flashLabel(self,tr("err"),"b_wifi")})};
 $("b-adv").onclick=function(){
   /* Przycisk bez odzewu przy REALNEJ emisji: czlowiek naciskal piec razy
      i piec razy zajmowal eter. Sasiedni ZAPISZ miga „zapisano", wiec kontrast
@@ -1355,7 +1370,7 @@ $("f-lang").onchange=function(){ustawJezyk(this.value)};
   if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
   if(j!==lang)ustawJezyk(j);
 })();
-$("ver").textContent="Biper panel v0.7 / K5";
+$("ver").textContent="Biper panel v0.8 / K5";
 /* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
    UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
    przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja
