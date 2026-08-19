@@ -62,7 +62,13 @@ header svg path{stroke:var(--hot)}
 .hname{font-weight:700;letter-spacing:.18em;font-size:15px}
 .hstat{margin-left:auto;display:flex;align-items:center;gap:7px;
   font-size:12px;color:var(--dim)}
-.led{width:9px;height:9px;border-radius:50%;background:var(--dim)}
+.led{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
+/* Skrot alarmowy: inna geometria niz reszta (goracy obrys, prostokat), zeby
+   pod stresem nie mylil sie ani z zakladka, ani z odznaka stanu. */
+.h-sos{flex:none;background:none;border:2px solid var(--hot);color:var(--hot-ink);
+  border-radius:7px;font:600 11px/1 var(--f-mono);letter-spacing:.1em;
+  padding:7px 10px;cursor:pointer}
+.h-sos:active{background:var(--hot);color:#0a0d11}
 .led.on{background:var(--live);box-shadow:0 0 10px var(--live-glow),0 0 4px var(--live)}
 .led.err{background:var(--hot);box-shadow:0 0 10px var(--hot-glow)}
 
@@ -213,7 +219,15 @@ section.on{display:block}
    dwie kopie tej reguly — pozniejsza, BEZ --klawiatura, wygrywala kaskade
    i klawiatura telefonu zaslaniala ostatnia wiadomosc. Jedna regula. */
 .feed{padding-bottom:calc(var(--pasek-h, 150px) + var(--klawiatura, 0px) + 12px)}
-.chatbar .wiersz{display:flex;gap:8px}
+.chatbar .wiersz{display:flex;gap:8px;align-items:stretch}
+/* Kapsula odbiorcy: jedyna trwala odpowiedz na "do kogo to poleci?".
+   Rozmowa prywatna dostaje goracy obrys — kanal wspolny jest domyslny,
+   wiec to prywatnosc ma sie wyrozniac, nie odwrotnie. */
+.dokogo{flex:none;display:flex;align-items:center;max-width:34%;
+  font:600 10px/1.2 var(--f-mono);letter-spacing:.08em;color:var(--dim);
+  border:1px solid var(--line);border-radius:8px;padding:0 8px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dokogo.dm{color:var(--ink);border-color:var(--hot-ink)}
 /* Gotowe zwroty: pod stresem, w rekawiczkach, w nocy — pisanie jest najgorszym
    z mozliwych interfejsow. Jedno dotkniecie zamiast dwudziestu, i krotsza
    wiadomosc, czyli mniej czasu antenowego. */
@@ -221,11 +235,14 @@ section.on{display:block}
   scrollbar-width:none;margin:0 -14px;padding:0 14px;
   /* cieniowanie krawedzi mowi, ze pasek jedzie dalej — bez tego ostatni zwrot
      wyglada na uciety przez blad, a nie na zapowiedz kolejnych */
-  -webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 28px),transparent 100%);
-  mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 28px),transparent 100%)}
+  -webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 44px),transparent 100%);
+  mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 44px),transparent 100%)}
 .zwroty::-webkit-scrollbar{display:none}
-.chatbar .zwroty button{flex:none;min-height:44px;padding:0 16px;border-radius:999px;
-  border:2px solid var(--line);background:none;color:var(--dim);
+/* box-shadow:none — ogolna regula .chatbar button klala pomaranczowa poswiate
+   nadawania rowniez na zwrotach, wiec "U mnie OK" wygladalo na akcje alarmowa.
+   48 px: rekawice i noc, te przyciski maja byc najlatwiejszym celem paska. */
+.chatbar .zwroty button{flex:none;min-height:48px;padding:0 16px;border-radius:999px;
+  border:2px solid var(--line);background:none;color:var(--dim);box-shadow:none;
   font:600 14px var(--f-body);letter-spacing:0;white-space:nowrap;cursor:pointer}
 .chatbar .zwroty button:active{background:var(--panel);border-color:var(--hot-ink);color:var(--ink)}
 /* Licznik: nie ozdoba. Ramka ponad 176 bajtow jest po cichu wyrzucana przez
@@ -288,7 +305,11 @@ section.on{display:block}
 .tbar{display:flex;align-items:center;gap:10px;margin:0 0 10px}
 .back{min-width:48px;font:400 16px var(--f-dsp)}
 .tbar .tn{font-weight:700;letter-spacing:.08em}
-.tbar .ts{margin-left:auto;font:500 11px ui-monospace,monospace;color:var(--live-ink)}
+/* var(--dim), nie zielen: zielone "slychac bylo" w tym samym rogu, w ktorym
+   KANAL trzyma zielone POLACZONO, mieszalo dwa poziomy zaufania — lacze
+   z wlasna kostka i zywotnosc CZLOWIEKA po drugiej stronie. Zielen znaczy
+   odtad jedno: stan lacza. */
+.tbar .ts{margin-left:auto;font:500 11px ui-monospace,monospace;color:var(--dim)}
 
 /* USTAWIENIA */
 #s-ust{padding-top:12px}
@@ -299,9 +320,11 @@ input.f,select.f{width:100%;background:var(--panel);padding:11px 12px}
   min-height:64px;letter-spacing:.05em;cursor:pointer;margin:12px 8px 0 0}
 .btn:active{background:var(--hot);color:#fff}
 
-nav{position:fixed;left:0;right:0;bottom:0;display:flex;z-index:2;
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;z-index:2;gap:2px;
   background:var(--panel2);border-top:1px solid var(--line);
-  padding-bottom:max(8px,env(safe-area-inset-bottom))}
+  /* Marginesy boczne: na 320 px "POMOC" zaczynalo sie 4 px od krawedzi,
+     a szesc celow stykalo sie bokami — w rekawicy zero marginesu bledu. */
+  padding:0 max(6px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left))}
 nav button{flex:1;position:relative;background:none;border:0;color:var(--dim);
   font:600 11px/1 var(--f-mono);letter-spacing:.1em;padding:0;min-height:64px;cursor:pointer}
 nav button svg{display:block;width:24px;height:24px;margin:0 auto 4px}
@@ -354,6 +377,10 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
     <path d="M194 171c80 45 80 125 0 170M244 102c168 78 168 230 0 308" fill="none" stroke-width="42" stroke-linecap="square"/>
   </svg>
   <div class="hname">BIPER</div>
+  <!-- Alarm ma byc osiagalny z KAZDEGO ekranu, nie tylko przez 53-pikselowa
+       zakladke: staly skrot w naglowku (i blizniak w pasku rozmowy, bo tam
+       naglowek jest schowany). -->
+  <button id="h-sos" class="h-sos" data-k-aria="a_hsos" aria-label="przejdź do alarmu">SOS</button>
   <div class="hstat"><span id="hs-sos" class="hs-sos"></span><span id="hs">...</span><span class="led" id="led"></span></div>
 </header>
 <main>
@@ -398,7 +425,7 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
     </div>
     <div id="node-thread" style="display:none">
       <div class="tbar"><button class="back" id="b-back" aria-label="wstecz" data-k-aria="a_wstecz"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 5l-7 7 7 7"/></svg></button>
-        <span class="tn" id="tn"></span><span class="ts" id="tsig"></span></div>
+        <span class="tn" id="tn"></span><span class="ts" id="tsig"></span><span class="led" id="led2"></span><button id="d-sos" class="h-sos" data-k-aria="a_hsos" aria-label="przejdź do alarmu">SOS</button></div>
       <div class="thread on" style="min-height:calc(100dvh - 250px)">
         <div class="feed" id="dfeed"></div></div>
     </div>
@@ -468,7 +495,11 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
 <div class="chatbar" id="chatbar">
   <div class="zwroty" id="zwroty"></div>
   <div class="wiersz">
-    <input id="ci" autocomplete="off" enterkeyhint="send" data-k-aria="ph_msg" placeholder="wiadomosc do wszystkich...">
+    <!-- Odbiorca NIE znika: placeholder ginie przy pierwszej literze, a wtedy
+         wlasnie czlowiek po rozmowie prywatnej wysylal pozycje calej sieci.
+         Kapsula stoi obok pola przez caly czas pisania. -->
+    <span class="dokogo" id="dokogo">DO WSZYSTKICH</span>
+    <input id="ci" autocomplete="off" enterkeyhint="send" data-k-aria="ph_msg" placeholder="napisz wiadomosc...">
     <button id="cs" class="wyslij" data-k="b_send">NADAJ</button>
   </div>
   <div class="licznik" id="licznik" role="status" aria-live="polite"></div>
@@ -478,7 +509,10 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
     <p class="podpis mono">Biper &middot; <b>esp32ai.me</b><br>Tomasz Fiedoruk &middot; fiedoruk.pl</p>
   </section>
   <nav>
-  <button id="t-pomoc" class="on"><svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12.5 8.5c2 2 2 5 0 7M15.5 5.5c3.6 3.6 3.6 9.4 0 13"/></svg><span data-k="t_help">POMOC</span></button>
+  <!-- Trojkat ostrzegawczy, nie znak marki: ikona POMOC byla ta sama kropka
+       z lukami co logo w naglowku, wiec zakladka alarmu wygladala jak "o
+       aplikacji". Alarm ma byc CZYNNOSCIA i innym ksztaltem niz wszystko. -->
+  <button id="t-pomoc" class="on"><svg viewBox="0 0 24 24"><path d="M12 4.2 21 19.2H3z" stroke-linejoin="round"/><path d="M12 10v4.4"/><circle cx="12" cy="16.9" r=".5" fill="currentColor"/></svg><span data-k="t_help">ALARM</span></button>
   <button id="t-czat"><span class="bdg"></span><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9"/><path d="M19.5 15.5c1.4 1.4 1.4 3.6 0 5" opacity=".6"/></svg><span data-k="t_chat">KANAŁ</span></button>
   <button id="t-wezly"><span class="bdg"></span><svg viewBox="0 0 24 24"><circle cx="6" cy="17" r="2.2"/><circle cx="17" cy="6.5" r="2.2"/><path d="M7.7 15.4 15.3 8M9 4.5c1.6 1.6 1.6 4 0 5.6" opacity=".6"/><path d="M14.5 14c1.6 1.6 1.6 4 0 5.6" opacity=".6"/></svg><span data-k="t_nodes">KONTAKTY</span></button>
   <button id="t-eter"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5" opacity=".55"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" opacity=".55"/></svg><span data-k="t_eter">ETER</span></button>
@@ -524,14 +558,14 @@ function hhmm(){var d=new Date();return pad2(d.getHours())+":"+pad2(d.getMinutes
 /* ===== i18n ===== */
 var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:"radio",
   k_ack:"odezwało się sąsiadów",err:"nie poszło",f_name:"TWOJA NAZWA",b_save:"ZAPISZ",b_adv:"ROZGŁOŚ SIĘ SĄSIADOM",f_wifi:"WI-FI KOSTKI",b_wifi:"ZAPISZ NAZWĘ WI-FI",f_prof:"KONTAKT NA ODLEGŁOŚĆ",prof_opis:"Wymieńcie się kodami w obie strony (SMS, e-mail, komunikator) — każdy wkleja kod drugiej osoby. Kod jest podpisany przez kostkę i nie da się go podrobić.",b_eksport:"POKAŻ MÓJ KOD",b_kopiuj:"KOPIUJ KOD",b_import:"DODAJ KONTAKT Z KODU",import_ph:"Wklej tu kod od drugiej osoby…",prof_dodano:"dodano — patrz KONTAKTY",prof_zly:"kod nieprawidłowy",prof_skopiowano:"skopiowano",wifi_note:"2–4 litery bez ogonków. Nowa nazwa od następnego okna hotspotu; puste pole wraca do wylosowanej.",wifi_ok:"od następnego okna",wifi_zle:"tylko litery A–Z (2–4)",
-  f_theme:"MOTYW",o_dark:"ciemny",o_light:"jasny",t_help:"POMOC",t_chat:"KANAŁ",
-  t_nodes:"KONTAKTY",a_zamknij:"zamknij",a_wstecz:"wstecz",a_radar:"Drabina przeskoków słyszanych kostek",a_os:"Aktywność w ostatniej godzinie",e_kto:"Kto jest wokoło",e_godzina:"Ostatnia godzina w eterze",e_przyrzady:"Przyrządy",e_legenda:"Biper nie zna kierunku ani odległości — to nie jest mapa",e_60:"60 min temu",e_teraz:"teraz",
+  f_theme:"MOTYW",o_dark:"ciemny",o_light:"jasny",t_help:"ALARM",t_chat:"KANAŁ",
+  t_nodes:"KONTAKTY",a_zamknij:"zamknij",a_wstecz:"wstecz",a_hsos:"przejdź do alarmu",a_radar:"Drabina przeskoków słyszanych kostek",a_os:"Aktywność w ostatniej godzinie",e_kto:"Kto jest wokoło",e_godzina:"Ostatnia godzina w eterze",e_przyrzady:"Przyrządy",e_legenda:"Biper nie zna kierunku ani odległości — to nie jest mapa",e_60:"60 min temu",e_teraz:"teraz",
     t_info:"PORADNIK",
     f_tryb:"TRYB RADIA",tryb_czekam:"odczytuje z kostki…",tryb_siec:"przekazuje cudze wiadomości dalej",tryb_sam:"nadaje tylko Twoje",tryb_gest:"Zmienia się trzema kliknięciami przycisku na kostce.",
     t_set:"USTAW",b_send:"NADAJ",b_cancel:"ANULUJ ALARM",
   h_nodes:"SŁYSZANE KOSTKI",b_sync:"ODŚWIEŻ",
   e_nodes:"cisza — wyślij ADVERT w ustawieniach,<br>żeby sąsiedzi Cię dodali",
-  ph_msg:"wiadomość do wszystkich…",ph_dm:"wiadomość do: %s…",
+  ph_msg:"napisz wiadomość…",do_all:"DO WSZYSTKICH",do_dm:"DO: %s",
   g_now:"SŁYSZĘ TERAZ",g_past:"BYŁY SŁYSZANE",ax_now:"TERAZ",ax_old:"1h+",st_conn:"ŁĄCZĘ",st_on:"POŁĄCZONO",st_off:"BRAK ŁĄCZA",
   wstrzymany:"WSTRZYMANY",nowa_wiad:"Nowa wiadomość od %s: %t",
     armed:"NADAJĘ",next_tx:"następne nadanie",sos_fail:"błąd nadawania — spróbuj ponownie",
@@ -566,14 +600,14 @@ var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:
   pusto_p:"Nikt jeszcze nic nie napisał. Napisz pierwszy — usłyszą Cię wszyscy w zasięgu."},
 en:{sos_sub:"I need help",h_node:"NODE",k_name:"name",k_radio:"radio",
   k_ack:"neighbours heard from",err:"not sent",f_name:"YOUR NAME",b_save:"SAVE",b_adv:"ANNOUNCE TO NEIGHBOURS",f_wifi:"CUBE\u2019S WI-FI",b_wifi:"SAVE WI-FI NAME",f_prof:"CONTACT AT A DISTANCE",prof_opis:"Exchange codes both ways (SMS, e-mail, any messenger) \u2014 each person pastes the other\u2019s code. The code is signed by the cube and cannot be forged.",b_eksport:"SHOW MY CODE",b_kopiuj:"COPY CODE",b_import:"ADD CONTACT FROM CODE",import_ph:"Paste the other person\u2019s code here\u2026",prof_dodano:"added \u2014 see KONTAKTY",prof_zly:"invalid code",prof_skopiowano:"copied",wifi_note:"2\u20134 plain letters. The new name applies from the next hotspot window; an empty field returns to the drawn one.",wifi_ok:"from the next window",wifi_zle:"letters A\u2013Z only (2\u20134)",
-  f_theme:"THEME",o_dark:"dark",o_light:"light",t_help:"HELP",t_chat:"CHANNEL",
+  f_theme:"THEME",o_dark:"dark",o_light:"light",t_help:"SOS",t_chat:"CHANNEL",
   f_tryb:"RADIO MODE",tryb_czekam:"reading from the cube…",tryb_siec:"carries other people's messages onward",tryb_sam:"transmits only yours",tryb_gest:"Changed with three clicks of the button on the cube.",
-  t_nodes:"CONTACTS",a_zamknij:"close",a_wstecz:"back",a_radar:"Hop ladder of audible cubes",a_os:"Activity in the last hour",e_kto:"Who is around",e_godzina:"The last hour on the air",e_przyrzady:"Instruments",e_legenda:"Biper knows no direction or distance — this is not a map",e_60:"60 min ago",e_teraz:"now",
+  t_nodes:"CONTACTS",a_zamknij:"close",a_wstecz:"back",a_hsos:"go to the alarm",a_radar:"Hop ladder of audible cubes",a_os:"Activity in the last hour",e_kto:"Who is around",e_godzina:"The last hour on the air",e_przyrzady:"Instruments",e_legenda:"Biper knows no direction or distance — this is not a map",e_60:"60 min ago",e_teraz:"now",
     t_info:"GUIDE",
     t_set:"SETUP",b_send:"SEND",b_cancel:"CANCEL ALARM",
   h_nodes:"HEARD CUBES",b_sync:"REFRESH",
   e_nodes:"silence — send an ADVERT in setup<br>so neighbours add you",
-  ph_msg:"message to everyone...",ph_dm:"message to %s...",
+  ph_msg:"write a message...",do_all:"TO EVERYONE",do_dm:"TO: %s",
   g_now:"HEARING NOW",g_past:"HEARD BEFORE",ax_now:"NOW",ax_old:"1h+",st_conn:"LINKING",st_on:"LINKED",st_off:"NO LINK",
   wstrzymany:"PAUSED",nowa_wiad:"New message from %s: %t",
     armed:"ON AIR",next_tx:"next transmit",sos_fail:"send failed — try again",
@@ -661,7 +695,10 @@ function setStat(k){
   if(linked)mark=" on";
   else if(k==="st_conn")mark="";
   $("hs").textContent=tr(k);
-  $("led").className="led"+mark}
+  $("led").className="led"+mark;
+  /* Blizniacza dioda w pasku rozmowy: naglowek z POLACZONO jest tam ukryty,
+     a zielen ma znaczyc jedno — stan lacza z WLASNA kostka, widoczny zawsze. */
+  $("led2").className="led"+mark}
 /* one switch for "the cube is answering" */
 /* Jeden kanal dla czytnika ekranu. Panel do 18.08 mial dwa obszary live i oba
    nie na tym: pasek przyrzadow recytowal, a wiadomosc, odezwanie sie sasiada
@@ -1154,10 +1191,14 @@ var tabs={pomoc:"s-pomoc",czat:"s-czat",wezly:"s-wezly",eter:"s-eter",info:"s-in
 function badge(id,on){var el=$(id);
   el.className=el.className.replace(" unread","")+(on?" unread":"")}
 function setChatPlaceholder(){
-  var t=tr("ph_msg");
-  if(chatTarget!=="chan"&&nodes[chatTarget])
-    t=tr("ph_dm").replace("%s",nodes[chatTarget].name);
-  $("ci").placeholder=t}
+  /* Odbiorce niesie STALA kapsula przy polu, nie placeholder — ten znika,
+     gdy tylko zaczyna sie pisac, czyli dokladnie wtedy, gdy pomylka kanalu
+     z rozmowa prywatna kosztuje najwiecej. */
+  var dm=chatTarget!=="chan"&&nodes[chatTarget];
+  $("ci").placeholder=tr("ph_msg");
+  var k=$("dokogo");
+  k.textContent=dm?tr("do_dm").replace("%s",nodes[chatTarget].name):tr("do_all");
+  k.className="dokogo"+(dm?" dm":"")}
 function showChatbar(on){
   $("chatbar").className="chatbar"+(on?" on":"");
   document.body.classList.toggle("pisze",on);
@@ -1167,7 +1208,7 @@ function showChatbar(on){
     var f=$("feed"); if(f&&f.lastElementChild)f.lastElementChild.scrollIntoView({block:"end"});
   });
 }
-var PORADNIK={"pl":[["Czym to jest","Kostka radiowa. Rozmawia wprost z innymi kostkami — bez internetu, bez operatora, bez abonamentu. Telefon jest tylko ekranem i klawiaturą."],["Jeden przycisk, pięć gestów","<b>klik</b> — następny ekran kostki.<br><b>dwa kliki</b> — tryb ninja: cisza i ciemność.<br><b>trzy sekundy</b> — hotspot Wi-Fi, hasło pokazuje ekran.<br><b>trzy kliknięcia</b> — przełącznik radia: SIEĆ (kostka przekazuje cudze wiadomości dalej) albo SAM (nadaje tylko Twoje). Fabrycznie SIEĆ. Aktualny tryb pokazuje strona SIEĆ na ekranie kostki, a wybór zostaje po odłączeniu prądu.<br><b>dziesięć sekund</b> — WYMAZANIE kostki. Odliczanie zaczyna się po czwartej sekundzie, puszczenie przycisku anuluje."],["Jak wołać o pomoc","Zakładka POMOC, jeden duży przycisk. Alarm powtarza się co minutę, dopóki nie naciśniesz ANULUJ ALARM. Licznik pokazuje, ilu różnych sąsiadów odezwało się po alarmie — wspólny kanał nie daje potwierdzeń odbioru i nikt nie może ich obiecać."],["Dwie drogi rozmowy","<b>KANAŁ</b> słyszą wszyscy w zasięgu.<br><b>KONTAKTY</b> to rozmowa z jedną osobą, szyfrowana do niej. Jeśli treść ma zostać między wami, pisz w KONTAKTACH."],["Kontakt na odległość","Osoby w zasięgu radia dodają się same. Kogoś dalej — np. rodzinę w innym mieście — dodajesz kodem: USTAW → POKAŻ MÓJ KOD, wyślij dowolną drogą (SMS, e-mail), a kod od niej wklej w DODAJ KONTAKT Z KODU. Wymieńcie się w obie strony. Wiadomość dojdzie, jeśli między wami istnieje łańcuch węzłów sieci."],["Co mówi dioda","biały błysk — kostka właśnie wstała<br>niebieski błysk — telefon się połączył<br>magenta — czeka wiadomość<br>niebieski, powoli pulsuje — hotspot działa<br>zielony puls co trzy sekundy — wszystko gra<br>ciemno — tryb ninja"],["Jak daleko sięga","Na parterze kilkaset metrów. Na zewnątrz kilka kilometrów. Przekaźnik na dachu 5–10 km, w wysokim punkcie 30–40 km. To liczby podawane przez społeczność, nie nasz pomiar. Decyduje wysokość i to, co stoi po drodze — nie cena sprzętu."],["Czego to NIE robi","<b>Wspólnego kanału słucha każdy</b>, kto ma taką kostkę: klucz jest w otwartym kodzie. I każdy może na nim napisać, podpisując się dowolną nazwą — nie ufaj samemu podpisowi.<br><br><b>Radio da się namierzyć.</b> Zawsze. Alarm nadaje co minutę i na tym polega jego działanie.<br><br><b>Tryb ninja</b> wycisza kostkę dla ludzi obok, nie dla odbiornika.<br><br><b>Kto zabierze kostkę</b>, odczyta z niej wiadomości i będzie mógł pisać w Twoim imieniu. Na to jest wymazanie."],["Gdy coś nie działa","<b>Brak łączności</b> — sprawdź, czy telefon jest w sieci kostki. Hotspot włączasz, trzymając przycisk trzy sekundy.<br><b>Nikogo nie słychać</b> — sprawdź, czy obie anteny są przykręcone.<br><b>Pusta lista sąsiadów</b> — naciśnij ROZGŁOŚ w USTAW i poczekaj chwilę."]],"en":[["What this is","A radio cube. It talks directly to other cubes — no internet, no operator, no subscription. Your phone is only its screen and keyboard."],["One button, five gestures","<b>click</b> — next screen on the cube.<br><b>double click</b> — ninja mode: silent and dark.<br><b>three seconds</b> — Wi-Fi hotspot, password shown on screen.<br><b>three clicks</b> — radio switch: SIEC (the cube carries other people's messages onward) or SAM (it transmits only yours). SIEC from the factory. The current mode is shown on the cube's SIEC page, and the choice survives a power cut.<br><b>ten seconds</b> — WIPE the cube. The countdown starts after the fourth second; releasing the button cancels."],["Calling for help","The HELP tab, one large button. The alarm repeats every minute until you press CANCEL ALARM. The counter shows how many different neighbours have been heard from since — the shared channel gives no delivery confirmations and nobody can promise them."],["Two ways to talk","<b>CHANNEL</b> is heard by everyone in range.<br><b>CONTACTS</b> is a conversation with one person, encrypted to them. If it should stay between you, write in CONTACTS."],["Contact at a distance","People in radio range add themselves. Someone farther away \u2014 family in another city \u2014 you add by code: SETTINGS \u2192 SHOW MY CODE, send it any way you like (SMS, e-mail), and paste theirs into ADD CONTACT FROM CODE. Exchange both ways. A message will arrive if a chain of network nodes exists between you."],["What the LED says","white flash — the cube has just started<br>blue flash — a phone connected<br>magenta — a message is waiting<br>blue, slowly pulsing — the hotspot is on<br>green pulse every three seconds — all is well<br>dark — ninja mode"],["How far it reaches","A few hundred metres on the ground floor. A few kilometres outdoors. A repeater on a roof 5–10 km, on a high point 30–40 km. These are figures reported by the community, not our measurement. Height and what stands in the way decide — not the price of the hardware."],["What it does NOT do","<b>Anyone with a cube like this hears the shared channel</b>: the key is in open source code. And anyone can write on it under any name — do not trust a signature alone.<br><br><b>Radio can be located.</b> Always. The alarm transmits every minute and that is how it works.<br><br><b>Ninja mode</b> silences the cube for people nearby, not for a receiver.<br><br><b>Whoever takes the cube</b> will read your messages and be able to write in your name. That is what the wipe is for."],["When something is wrong","<b>No link</b> — check that the phone is on the cube's network. Hold the button for three seconds to start the hotspot.<br><b>Nobody is heard</b> — check that both antennas are screwed on.<br><b>Empty neighbour list</b> — press ANNOUNCE in SETTINGS and wait a moment."]]};
+var PORADNIK={"pl":[["Czym to jest","Kostka radiowa. Rozmawia wprost z innymi kostkami — bez internetu, bez operatora, bez abonamentu. Telefon jest tylko ekranem i klawiaturą."],["Jeden przycisk, pięć gestów","<b>klik</b> — następny ekran kostki.<br><b>dwa kliki</b> — tryb ninja: cisza i ciemność.<br><b>trzy sekundy</b> — hotspot Wi-Fi, hasło pokazuje ekran.<br><b>trzy kliknięcia</b> — przełącznik radia: SIEĆ (kostka przekazuje cudze wiadomości dalej) albo SAM (nadaje tylko Twoje). Fabrycznie SIEĆ. Aktualny tryb pokazuje strona SIEĆ na ekranie kostki, a wybór zostaje po odłączeniu prądu.<br><b>dziesięć sekund</b> — WYMAZANIE kostki. Odliczanie zaczyna się po czwartej sekundzie, puszczenie przycisku anuluje."],["Jak wołać o pomoc","Zakładka ALARM, jeden duży przycisk. Alarm powtarza się co minutę, dopóki nie naciśniesz ANULUJ ALARM. Licznik pokazuje, ilu różnych sąsiadów odezwało się po alarmie — wspólny kanał nie daje potwierdzeń odbioru i nikt nie może ich obiecać."],["Dwie drogi rozmowy","<b>KANAŁ</b> słyszą wszyscy w zasięgu.<br><b>KONTAKTY</b> to rozmowa z jedną osobą, szyfrowana do niej. Jeśli treść ma zostać między wami, pisz w KONTAKTACH."],["Kontakt na odległość","Osoby w zasięgu radia dodają się same. Kogoś dalej — np. rodzinę w innym mieście — dodajesz kodem: USTAW → POKAŻ MÓJ KOD, wyślij dowolną drogą (SMS, e-mail), a kod od niej wklej w DODAJ KONTAKT Z KODU. Wymieńcie się w obie strony. Wiadomość dojdzie, jeśli między wami istnieje łańcuch węzłów sieci."],["Co mówi dioda","biały błysk — kostka właśnie wstała<br>niebieski błysk — telefon się połączył<br>magenta — czeka wiadomość<br>niebieski, powoli pulsuje — hotspot działa<br>zielony puls co trzy sekundy — wszystko gra<br>ciemno — tryb ninja"],["Jak daleko sięga","Na parterze kilkaset metrów. Na zewnątrz kilka kilometrów. Przekaźnik na dachu 5–10 km, w wysokim punkcie 30–40 km. To liczby podawane przez społeczność, nie nasz pomiar. Decyduje wysokość i to, co stoi po drodze — nie cena sprzętu."],["Czego to NIE robi","<b>Wspólnego kanału słucha każdy</b>, kto ma taką kostkę: klucz jest w otwartym kodzie. I każdy może na nim napisać, podpisując się dowolną nazwą — nie ufaj samemu podpisowi.<br><br><b>Radio da się namierzyć.</b> Zawsze. Alarm nadaje co minutę i na tym polega jego działanie.<br><br><b>Tryb ninja</b> wycisza kostkę dla ludzi obok, nie dla odbiornika.<br><br><b>Kto zabierze kostkę</b>, odczyta z niej wiadomości i będzie mógł pisać w Twoim imieniu. Na to jest wymazanie."],["Gdy coś nie działa","<b>Brak łączności</b> — sprawdź, czy telefon jest w sieci kostki. Hotspot włączasz, trzymając przycisk trzy sekundy.<br><b>Nikogo nie słychać</b> — sprawdź, czy obie anteny są przykręcone.<br><b>Pusta lista sąsiadów</b> — naciśnij ROZGŁOŚ w USTAW i poczekaj chwilę."]],"en":[["What this is","A radio cube. It talks directly to other cubes — no internet, no operator, no subscription. Your phone is only its screen and keyboard."],["One button, five gestures","<b>click</b> — next screen on the cube.<br><b>double click</b> — ninja mode: silent and dark.<br><b>three seconds</b> — Wi-Fi hotspot, password shown on screen.<br><b>three clicks</b> — radio switch: SIEC (the cube carries other people's messages onward) or SAM (it transmits only yours). SIEC from the factory. The current mode is shown on the cube's SIEC page, and the choice survives a power cut.<br><b>ten seconds</b> — WIPE the cube. The countdown starts after the fourth second; releasing the button cancels."],["Calling for help","The SOS tab, one large button. The alarm repeats every minute until you press CANCEL ALARM. The counter shows how many different neighbours have been heard from since — the shared channel gives no delivery confirmations and nobody can promise them."],["Two ways to talk","<b>CHANNEL</b> is heard by everyone in range.<br><b>CONTACTS</b> is a conversation with one person, encrypted to them. If it should stay between you, write in CONTACTS."],["Contact at a distance","People in radio range add themselves. Someone farther away \u2014 family in another city \u2014 you add by code: SETTINGS \u2192 SHOW MY CODE, send it any way you like (SMS, e-mail), and paste theirs into ADD CONTACT FROM CODE. Exchange both ways. A message will arrive if a chain of network nodes exists between you."],["What the LED says","white flash — the cube has just started<br>blue flash — a phone connected<br>magenta — a message is waiting<br>blue, slowly pulsing — the hotspot is on<br>green pulse every three seconds — all is well<br>dark — ninja mode"],["How far it reaches","A few hundred metres on the ground floor. A few kilometres outdoors. A repeater on a roof 5–10 km, on a high point 30–40 km. These are figures reported by the community, not our measurement. Height and what stands in the way decide — not the price of the hardware."],["What it does NOT do","<b>Anyone with a cube like this hears the shared channel</b>: the key is in open source code. And anyone can write on it under any name — do not trust a signature alone.<br><br><b>Radio can be located.</b> Always. The alarm transmits every minute and that is how it works.<br><br><b>Ninja mode</b> silences the cube for people nearby, not for a receiver.<br><br><b>Whoever takes the cube</b> will read your messages and be able to write in your name. That is what the wipe is for."],["When something is wrong","<b>No link</b> — check that the phone is on the cube's network. Hold the button for three seconds to start the hotspot.<br><b>Nobody is heard</b> — check that both antennas are screwed on.<br><b>Empty neighbour list</b> — press ANNOUNCE in SETTINGS and wait a moment."]]};
 /* Poradnik jest DANYMI, nie znacznikami: trzy jezyki tego samego tekstu w HTML
    dalyby trzy kopie do utrzymania i trzy okazje, zeby sie rozjechaly. */
 function rysujPoradnik(){
@@ -1211,7 +1252,7 @@ function odczytajStan(){
       $("f-wifi").value=String(d.ssid).replace(/^Biper-/,"");
     /* Wersja z KOSTKI, nie z pliku panelu: przy kilku kostkach i kilku
        wydaniach dziennie czlowiek musi widziec, ktory system tu dziala. */
-    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.12 / K5";
+    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.13 / K5";
   }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
 }
 
@@ -1298,6 +1339,8 @@ function closeThread(){
   showNodeThread(false);
   document.body.className=""}
 $("b-back").onclick=function(){closeThread();drawNodes();showChatbar(false)};
+$("h-sos").onclick=function(){show("pomoc")};
+$("d-sos").onclick=function(){closeThread();showChatbar(false);show("pomoc")};
 /* one message header: mine carries the delivery state, theirs sender + SNR */
 function whoTag(html,cls){return '<span class="who'+(cls?" "+cls:"")+'">'+html+"</span>"}
 function stamp(k,t,cls){return whoTag(tr(k)+" &middot; "+t,cls)}
@@ -1452,7 +1495,7 @@ $("f-lang").onchange=function(){ustawJezyk(this.value)};
   if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
   if(j!==lang)ustawJezyk(j);
 })();
-$("ver").textContent="Biper panel v0.12 / K5 \u00b7 OS: \u2014";
+$("ver").textContent="Biper panel v0.13 / K5 \u00b7 OS: \u2014";
 /* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
    UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
    przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja
@@ -1551,7 +1594,10 @@ function FakeWS(){var s=this;s.binaryType="";
       pushText(r,"Zosia: Przyjęłam, jestem 2 km na północ.");
       reply(r,3300)}
     else if(c===CMD.SEND_TXT){reply([RESP.SENT,0,1,0,0,0,1,0,0,0]);
-      reply([PUSH.CONFIRMED],1500);
+      /* Tag ACK = tag z RESP.SENT (bajty 2-5). Goly [0x82] nigdy sie nie
+         dopasowywal, wiec podglad wiecznie pokazywal NADANO i ukrywal caly
+         stan DOSZLO — recenzent wzial to za brak drabinki stanow. */
+      reply([PUSH.CONFIRMED,1,0,0,0],1500);
       var d=[RESP.DM_V3,30,0,0].concat(zosia).concat([0xFF,0]); /* prefix at 4 */
       push32(d,now());
       pushText(d,"Jasne, czekam przy moscie."); /* text from offset 16 */

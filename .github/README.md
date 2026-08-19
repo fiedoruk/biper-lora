@@ -15,15 +15,15 @@ without reading a manual.
 [![Radio: SX1262 868 MHz](https://img.shields.io/badge/radio-SX1262%20868%20MHz-087357)](#legal-and-radio-boundaries)
 [![Upstream files touched: 13](https://img.shields.io/badge/upstream%20files%20touched-13-81540a)](#how-this-fork-touches-upstream)
 
-> **Status.** The host side works and is gated in CI. The device side has started
-> to yield measurements — one cube so far; the next step is written down: the same
-> measurements on a second cube, then the first A ↔ B message between them on this
-> build. Until that passes, the two-household link in the first line is the design
-> goal, not a report. This README keeps the two apart. The web installer at
-> [esp32ai.me/biper](https://esp32ai.me/biper/) ships a v0.6 build of this layer
-> (commit `0e4503b`, SHA-256 published next to the installer and in the release
-> manifest) for owner-led validation. There is no tagged release and no signed
-> artifact in this repository yet. Changes: [CHANGELOG.md](../CHANGELOG.md).
+> **Status.** The host side works and is gated in CI. The pair works: on
+> 20 August 2026 two cubes on this build exchanged direct messages both ways,
+> each through its own phone over the cube's Wi-Fi panel — owner-led
+> validation on a desk, not a range test. Range, power draw and long-run
+> stability remain unmeasured, and this README keeps measured and unmeasured
+> apart. The web installer at [esp32ai.me/biper](https://esp32ai.me/biper/)
+> ships the current build of this layer (SHA-256 published next to the
+> installer and in the release manifest). There is no tagged release and no
+> signed artifact in this repository yet. Changes: [CHANGELOG.md](../CHANGELOG.md).
 
 ---
 
@@ -60,7 +60,7 @@ Bluetooth. Everything below is what Biper adds on top, all of it in
 | **A screen language** | 64 × 48 pixels, one bit deep. Six states, each an animated field rather than a word: at rest the field flows and carries `BIPER`, and its speed is the density of the mesh around you. Ported to the website pixel-for-pixel and kept honest by a gate that compiles the firmware's own drawing functions and diffs the frames. |
 | **One button, five gestures** | Click cycles the screen. Double click is silence and darkness. Triple click switches whether the cube relays other people's traffic. Three seconds brings up a Wi-Fi hotspot. Ten seconds wipes the cube, counting down from the fourth second so nobody wipes one by leaning on it. |
 | **A relay switch that survives a restart** | Two modes, both named for what they do — `SIEC` (Polish for „network”) carries other people's messages onward; `SAM` („on your own”) transmits only yours. The cube has no battery, so a nudged cable is a reboot — the choice is stored in NVS, and the screen says which mode is on. |
-| **A panel served from the cube's own flash** | Hold the button, join the cube's Wi-Fi, and the phone becomes a screen and a keyboard. No account, no app store, no internet. 93 kB of HTML, 34.7 kB (35534 bytes) over the air after gzip. It carries a built-in guide, so the manual is inside the device. |
+| **A panel served from the cube's own flash** | Hold the button, join the cube's Wi-Fi, and the phone becomes a screen and a keyboard. No account, no app store, no internet. 97 kB of HTML, 36.1 kB (36962 bytes) over the air after gzip. It carries a built-in guide, so the manual is inside the device. |
 | **A voice and a light** | Two or three notes per event, never a jingle. One addressable LED whose behaviour is documented next to the code that drives it — including the fact that ninja mode really does go dark, and that the radio keeps transmitting while it does. |
 | **Custody of the device** | Origin guard on the WebSocket bridge, a fresh eight-character Wi-Fi password for every hotspot window (31-symbol alphabet chosen to be copyable off a 64 × 48 screen), the pairing PIN visible only inside a pairing window, private-key export compiled out — identity is disposable by design, contacts restore from the panel's local backup — and security headers on everything the cube serves. |
 
@@ -148,7 +148,7 @@ stock app slot.
 This is the part a reviewer should check first.
 
 ```
-51 files changed, 12786 insertions(+), 360 deletions(-)   # vs MeshCore companion-v1.17.1, as of 20 Aug 2026
+51 files changed, 12951 insertions(+), 360 deletions(-)   # vs MeshCore companion-v1.17.1, as of 20 Aug 2026
 ```
 
 Of those lines  about 7 000 sit in two generated headers — the gzipped panel

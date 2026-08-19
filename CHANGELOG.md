@@ -9,6 +9,35 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.16 — 2026-08-20 — the panel keeps answering three questions: who hears me, is my cube linked, where is the alarm
+
+An external UX review of panel screenshots (fresh reviewer, no build context)
+found that the interface stopped answering the three questions that matter
+in an emergency. Panel component v0.13:
+
+- **"Who am I talking to" never disappears.** The recipient lived only in the
+  input placeholder, which vanishes at the first typed letter — exactly when
+  someone returning from a private chat would broadcast their position to the
+  whole network. A permanent capsule next to the input now says
+  DO WSZYSTKICH / DO: <name>, with a hot outline for private threads.
+- **The alarm is reachable from every screen.** A persistent SOS shortcut sits
+  in the header, and its twin in the conversation bar (the header is hidden
+  there). The HELP tab is renamed ALARM (EN: SOS) and its icon is a warning
+  triangle — it used to share its shape with the brand mark, so the alarm tab
+  read as "about this app".
+- **Green means one thing: the link to YOUR cube.** The conversation header
+  showed the contact's last-heard time in the same green, same corner where
+  the channel screen shows POŁĄCZONO — two levels of trust in one slot. The
+  link LED now travels into the conversation bar and last-heard turns neutral.
+- **Glove-sized quick replies, honest edges.** Quick-reply chips grow to
+  48 px and lose the orange transmit glow they inherited by accident (\"U mnie
+  OK\" looked like an alarm action). The bottom navigation gains side margins
+  — on a 320 px screen the first tab started 4 px from the edge and six
+  targets touched sides.
+- **The preview mock finally shows delivery states.** Its ACK carried no tag,
+  so DOSZŁO could never appear in screenshots — the reviewer reasonably
+  mistook an unmatchable mock for a missing feature.
+
 ## v0.8.15 — 2026-08-20 — SLYSZE stops lying between adverts, and the word pool doubles
 
 - **The "SLYSZE N" counter and the advert cadence finally agree.** The
