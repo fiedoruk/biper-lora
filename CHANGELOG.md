@@ -9,6 +9,17 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.12 — 2026-08-19 — a contact across any distance
+
+- **SETTINGS gains "contact at a distance".** SHOW MY CODE exports the
+  cube's signed advert as a pasteable `BIPER1:` code — send it by SMS,
+  e-mail, any messenger. ADD CONTACT FROM CODE verifies the signature on
+  the cube and adds the person to KONTAKTY; forged or damaged codes are
+  rejected. Exchange codes both ways and a message will arrive whenever a
+  chain of network nodes exists between you. The built-in guide explains
+  the flow. Bench-verified: export 111 B, import OK, contact listed,
+  garbage rejected. Panel component v0.10.
+
 ## v0.8.11 — 2026-08-19 — the pair finally sees each other: one class, one memory layout
 
 - **The contact list works.** The RAM diet of 18 Aug used `-U MAX_CONTACTS`
