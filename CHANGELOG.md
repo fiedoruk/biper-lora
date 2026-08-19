@@ -9,6 +9,24 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.14 — 2026-08-20 — messages reach the phone, passwords stop lying to the eye
+
+- **The panel finally understands the cube's message frames.** The panel
+  never declared its protocol version, so the cube answered with the old
+  frame codes while the panel's parser only understood the new ones — every
+  message was fetched and silently dropped (the preview mock spoke the new
+  codes, which hid the bug until a live pair). The panel now declares
+  version 3 on connect, and additionally drains the queue at startup, so
+  messages that arrived while the phone slept appear the moment the panel
+  opens. Panel component v0.11.
+- **The password alphabet loses its look-alike twins.** S/5, G/6, B/8 and
+  Z/2 render near-identically on the 5×7 screen font; the owner typed a
+  password with S and G off the OLED and the phone refused it while the
+  access point itself was fine. Both twins of every pair are gone
+  (23 symbols, 36.2 bits), and a stored password containing dropped
+  characters is redrawn on boot, so the screen always shows something
+  typeable.
+
 ## v0.8.13 — 2026-08-20 — the pair completes both ways, and cubes carry their word as a name
 
 - **The advert-reply escapes the shared rate limit.** The boot advert almost

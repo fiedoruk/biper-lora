@@ -617,7 +617,7 @@ function applyLang(){
   for(var i=0;i<tagged.length;i++)tagged[i].innerHTML=tr(tagged[i].getAttribute("data-k"));
   setChatPlaceholder();setStat(linked?"st_on":"st_off");drawTele();drawNodes()}
 /* ===== protocol ===== */
-var CMD={APP_START:1,SEND_TXT:2,SEND_CHAN:3,GET_CONTACTS:4,GET_TIME:5,SET_TIME:6,ADVERT:7,EXPORT:17,IMPORT:18,
+var CMD={APP_START:1,SEND_TXT:2,SEND_CHAN:3,GET_CONTACTS:4,GET_TIME:5,SET_TIME:6,ADVERT:7,EXPORT:17,IMPORT:18,DEV_QUERY:22,
   SET_NAME:8,ADD_CONTACT:9,SYNC:10,GET_BATT:20};
 var RESP={OK:0,ERR:1,C_START:2,CONTACT:3,C_END:4,SELF_INFO:5,SENT:6,CURR_TIME:9,
   NO_MORE:10,BATT:12,DM_V3:16,CHAN_V3:17};
@@ -749,10 +749,20 @@ function onFrame(b){
        wiec panel ustawia go kostce przy KAZDYM nawiazaniu lacza (firmware
        przyjmuje tylko czas nie wczesniejszy od wlasnego, wiec cofniecia nie
        grozi). */
+    /* Deklaracja wersji protokolu (DEVICE_QUERY, ver 3). Bez niej kostka
+       odpowiadala STARYMI kodami wiadomosci (7/8), a parser panelu rozumie
+       tylko nowe (16/17) — kazda wiadomosc byla pobierana i po cichu
+       wyrzucana. Mock klamal nowymi kodami, wiec blad nie wychodzil na
+       podgladzie — wyszedl na zywej parze (20.08).  */
+    ws.send(u8([CMD.DEV_QUERY,3]));
     var tb=new Uint8Array(5),ep=Math.floor(Date.now()/1000);
     tb[0]=CMD.SET_TIME;tb[1]=ep&255;tb[2]=(ep>>>8)&255;tb[3]=(ep>>>16)&255;tb[4]=(ep>>>24)&255;
     ws.send(tb);
     ws.send(u8([CMD.GET_CONTACTS]));
+    /* Oproznienie kolejki NA STARCIE: wiadomosci, ktore przyszly przy
+       zgaszonym ekranie, lezaly w kostce niewidoczne — panel dosysal tylko
+       na zywy sygnal 0x83. Jedno SYNC uruchamia lancuch az do NO_MORE. */
+    ws.send(u8([CMD.SYNC]));
   }else if(code===RESP.C_START){
     /* keep msgs across re-syncs: mark all, prune after C_END */
     for(var p in nodes)nodes[p].stale=true;
@@ -1192,7 +1202,7 @@ function odczytajStan(){
       $("f-wifi").value=String(d.ssid).replace(/^Biper-/,"");
     /* Wersja z KOSTKI, nie z pliku panelu: przy kilku kostkach i kilku
        wydaniach dziennie czlowiek musi widziec, ktory system tu dziala. */
-    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.10 / K5";
+    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.11 / K5";
   }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
 }
 
@@ -1433,7 +1443,7 @@ $("f-lang").onchange=function(){ustawJezyk(this.value)};
   if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
   if(j!==lang)ustawJezyk(j);
 })();
-$("ver").textContent="Biper panel v0.10 / K5 \u00b7 OS: \u2014";
+$("ver").textContent="Biper panel v0.11 / K5 \u00b7 OS: \u2014";
 /* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
    UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
    przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja

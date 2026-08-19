@@ -601,9 +601,19 @@ static void biper_ap_window() {
   // look-alike glyphs would cost more than the two bits they bring.
   // Eight characters from a 31-symbol alphabet = 39.6 bits. That figure is
   // stated HERE and nowhere else; BiperAp.h points here rather than repeat it.
-  if (biper_nvs.getString(NVS_PASS, biper_state.pass, sizeof(biper_state.pass)) == 0 ||
-      biper_state.pass[0] == 0) {
-    static const char ALF[] = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  // The "no look-alikes" alphabet still carried four pairs that a 5x7 font
+  // renders near-identically: S/5, G/6, B/8, Z/2. The owner typed a password
+  // with S and G off the OLED and Android refused it (20.08, bench-verified:
+  // the AP itself was fine and another device joined with the stored key).
+  // Both twins of each pair are gone. 23 symbols ^ 8 = 36.2 bits.
+  static const char ALF[] = "ACDEFHJKMNPQRTUVWXY3479";
+  // Self-heal: a password stored by an older release may contain the dropped
+  // characters — draw a fresh one so what the screen shows is always typeable.
+  bool ok_pass = biper_nvs.getString(NVS_PASS, biper_state.pass, sizeof(biper_state.pass)) != 0 &&
+                 biper_state.pass[0] != 0;
+  for (const char* c = biper_state.pass; ok_pass && *c; c++)
+    if (strchr(ALF, *c) == nullptr) ok_pass = false;
+  if (!ok_pass) {
     for (size_t i = 0; i + 1 < sizeof(biper_state.pass) && i < 8; i++)
       biper_state.pass[i] = ALF[esp_random() % (sizeof(ALF) - 1)];
     biper_state.pass[8] = 0;
@@ -628,8 +638,12 @@ static void biper_ap_window() {
   // person in trouble copies `pio device monitor` into a bug report and
   // publishes a live WPA2 key next to its SSID. The password belongs on the
   // OLED, where only the person holding the cube can read it.
-  Serial.printf("[BIPER_AP] pass=%s max_conn=1\n",
+#ifdef BIPER_DEBUG_SECRETS
+  Serial.printf("[BIPER_AP] pass=%s (BENCH ONLY)\n", biper_state.pass);
+#else
+  Serial.printf("[BIPER_AP] pass=%s max_conn=4\n",
                 biper_state.pass[0] ? "(set, shown on screen)" : "(open)");
+#endif
 
   uint32_t last_log = 0;
   // The countdown runs only while the cube is ALONE (owner decision 19.08):
