@@ -9,6 +9,15 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.6 — 2026-08-19 — the contacts are called contacts
+
+- **The panel tab WĘZŁY is now KONTAKTY (NODES → CONTACTS).** The owner —
+  the person who knows this product best — could not find where to write to
+  someone, because the neighbour list carried an engineer's word. A label
+  the author cannot find has failed the only test it has. The built-in guide
+  follows; internal identifiers stay unchanged, so nothing scripted against
+  the panel breaks. Panel component v0.7.
+
 ## v0.8.5 — 2026-08-19 — a SIEC cube introduces itself on the air
 
 - **Two fresh cubes now see each other without a phone.** A cube in SIEC
