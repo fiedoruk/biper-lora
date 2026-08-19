@@ -1,0 +1,44 @@
+#pragma once
+
+#include "DisplayDriver.h"
+
+#include <SPI.h>
+#include <Wire.h>
+#include <heltec-eink-modules.h>
+#include <CRC32.h>
+#include <helpers/RefCountedDigitalPin.h>
+
+// Display driver for E290 e-ink display
+class E290Display : public DisplayDriver {
+  EInkDisplay_VisionMasterE290 display;
+  bool _init = false;
+  bool _isOn = false;
+  RefCountedDigitalPin* _periph_power;
+  CRC32 display_crc;
+  uint32_t last_display_crc_value = 0;
+  uint16_t _color;
+
+public:
+  E290Display(RefCountedDigitalPin* periph_power = NULL) : DisplayDriver(296, 128), _periph_power(periph_power) {}
+
+  bool begin();
+  bool isOn() override { return _isOn; }
+  bool isEink() override { return true; }
+  void turnOn() override;
+  void turnOff() override;
+  void clear() override;
+  void startFrame(ColorVal bkg = UIColor::window_bkg) override;
+  void setTextSize(int sz) override;
+  void setColor(ColorVal c) override;
+  void setCursor(int x, int y) override;
+  void print(const char *str) override;
+  void fillRect(int x, int y, int w, int h) override;
+  void drawRect(int x, int y, int w, int h) override;
+  void drawXbm(int x, int y, const uint8_t *bits, int w, int h) override;
+  uint16_t getTextWidth(const char *str) override;
+  void endFrame() override;
+
+private:
+  void powerOn();
+  void powerOff();
+};

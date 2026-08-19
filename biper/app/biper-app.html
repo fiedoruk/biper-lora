@@ -1,0 +1,1472 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Tomasz Fiedoruk -->
+<!doctype html>
+<html lang="pl"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BIPER</title>
+<style>
+/* Typografia systemu — te same kroje, co strona i (jako pixel-art) kostka.
+   Serwowane z flasha przez /f/*.woff2, wiec dzialaja bez internetu, w AP.
+   latin-ext jest OBOWIAZKOWY: bez niego polskie ogonki w naglowkach leca
+   fallbackiem na system-ui. Japonski celowo NIE ma tu wlasnego pliku —
+   CJK wazy megabajty, wiec bierzemy krój systemowy telefonu, a jesli jest
+   BIZ UDGothic (Morisawa, krój UD wybrany za mierzalna czytelnosc), to on. */
+@font-face{font-family:Atk;src:url(/f/next.woff2)format("woff2");font-weight:200 800;font-display:swap}
+@font-face{font-family:Atk;src:url(/f/next-ext.woff2)format("woff2");font-weight:200 800;font-display:swap;unicode-range:U+0100-02FF,U+1E00-1EFF,U+20A0-20CF,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:AtkM;src:url(/f/mono.woff2)format("woff2");font-weight:200 800;font-display:swap}
+@font-face{font-family:AtkM;src:url(/f/mono-ext.woff2)format("woff2");font-weight:200 800;font-display:swap;unicode-range:U+0100-02FF,U+1E00-1EFF,U+20A0-20CF,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:ArchB;src:url(/f/black.woff2)format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:ArchB;src:url(/f/black-ext.woff2)format("woff2");font-weight:400;font-display:swap;unicode-range:U+0100-02FF,U+1E00-1EFF,U+20A0-20CF,U+2C60-2C7F,U+A720-A7FF}
+:root{
+  --f-body:Atk,"BIZ UDPGothic","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  --f-mono:AtkM,"BIZ UDGothic",ui-monospace,monospace;
+  --f-dsp:ArchB,"BIZ UDPGothic","Hiragino Sans",system-ui,sans-serif;
+
+  --bg:#231b3e;--panel:#2d2450;--panel2:#1e1735;--line:#7a6cb8;
+  --ink:#f4efe5;--dim:#b9aee0;--hot:#ff7354;--hot-ink:#ff7354;--hot-glow:rgba(255,115,84,.45);
+  --live:#79ffc0;--live-ink:#79ffc0;--live-glow:rgba(121,255,192,.35);--czlowiek:#978cff
+}
+[data-theme="light"]{
+  --bg:#f4e6c9;--panel:#fbf4e4;--panel2:#f4e6c9;--line:#8d7b58;
+  --ink:#171520;--dim:#4a4854;--hot:#ff5d3a;--hot-ink:#b32d00;--hot-glow:rgba(255,93,58,.25);
+  --live:#0f9d58;--live-ink:#0a6b3c;--live-glow:rgba(15,157,88,.2);--czlowiek:#4737d4
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.5 var(--f-body);
+  display:flex;flex-direction:column}
+/* range field: the grid radiates from the node and fades out — not wallpaper */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);
+  background-size:28px 28px;
+  -webkit-mask-image:radial-gradient(circle at 50% 52%,#000 0 30%,transparent 78%);
+  mask-image:radial-gradient(circle at 50% 52%,#000 0 30%,transparent 78%)}
+[data-theme="light"] body::before{display:none}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+/* line glyphs: one stroke grammar, each icon carries only its size */
+.back svg,.go2 svg,nav button svg{fill:none;stroke:currentColor;
+  stroke-width:1.75;stroke-linecap:round}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+/* one shell for every text control; only ground and padding are local */
+.chatbar input,input.f,select.f{border:1px solid var(--line);border-radius:8px;
+  color:var(--ink);font:16px var(--f-body);min-height:64px;outline:0}
+
+body.dm>header{display:none}
+header{display:flex;align-items:center;gap:10px;padding:12px 16px;
+  border-bottom:1px solid var(--line);background:var(--panel2);z-index:2}
+header svg{width:26px;height:26px;flex:none}
+header svg path{stroke:var(--hot)}
+.hname{font-weight:700;letter-spacing:.18em;font-size:15px}
+.hstat{margin-left:auto;display:flex;align-items:center;gap:7px;
+  font-size:12px;color:var(--dim)}
+.led{width:9px;height:9px;border-radius:50%;background:var(--dim)}
+.led.on{background:var(--live);box-shadow:0 0 10px var(--live-glow),0 0 4px var(--live)}
+.led.err{background:var(--hot);box-shadow:0 0 10px var(--hot-glow)}
+
+main{flex:1;overflow-y:auto;z-index:1;
+  /* Bez tego scrollIntoView({block:"end"}) stawia dol wiadomosci rowno
+     z dolem okna, czyli POD paskiem pisania i nawigacja. */
+  scroll-padding-bottom:calc(var(--pasek-h,0px) + var(--nav-h,64px) + var(--klawiatura,0px) + 12px);
+  padding:0 16px calc(66px + env(safe-area-inset-bottom))}
+section{display:none;max-width:30rem;margin:0 auto}
+section.on{display:block}
+/* every section label speaks the same way; only size and margin are local */
+.frame h2,.nodes-top h2,.ghdr,label.f{color:var(--dim);text-transform:uppercase}
+.frame h2,.nodes-top h2{margin:0 0 4px;font-size:12px;letter-spacing:.16em}
+
+/* "live radio data" frame — the one bracket rule */
+.frame{position:relative;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:12px 16px}
+.frame::before,.frame::after{content:"";position:absolute;width:13px;height:13px;
+  border:2px solid var(--hot);opacity:.8}
+.frame::before{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:10px 0 0 0}
+.frame::after{bottom:-2px;right:-2px;border-left:0;border-top:0;border-radius:0 0 10px 0}
+
+/* POMOC */
+#s-pomoc.on{display:grid;grid-template-rows:auto 1fr auto auto auto;
+  min-height:calc(100dvh - 128px);padding-top:12px}
+.tele{font-size:15px;color:var(--live-ink);
+  text-shadow:0 0 12px var(--live-glow);letter-spacing:.05em}
+.sos-zone{display:flex;align-items:center;justify-content:center;padding:8px 0}
+.sos{position:relative;width:clamp(184px,62vw,264px);height:clamp(184px,62vw,264px);border-radius:50%;border:0;
+  background:radial-gradient(circle at 34% 30%,#ff7a56,var(--hot) 62%);
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:2px;
+  box-shadow:0 0 0 6px var(--panel),0 0 34px var(--hot-glow),0 0 90px var(--hot-glow);
+  animation:breath 2.4s ease-in-out infinite}
+.sos:active{transform:scale(.97)}
+/* Odliczanie 3-2-1 po dotknieciu: alarm ma isc jednym gestem, ale pomylka
+   dostaje trzy sekundy na wycofanie. Przytrzymanie odpada — pod panika
+   i w rekawicach zawodzi; odliczanie wystarczy dotknac raz. */
+.sos[data-state="odlicza"]{animation:none}
+.sos[data-state="odlicza"] .sos-glyph{font-size:104px}
+.sos[aria-disabled="true"]{filter:saturate(.35) brightness(.8);animation:none;cursor:default}
+.sos-glyph{font:400 74px/1 var(--f-dsp);letter-spacing:.02em;color:#171520}
+.sos-sub2{font:600 14px/1.3 var(--f-body);color:#171520}
+.por{border-bottom:1px solid var(--line)}
+.por summary{padding:16px 4px;min-height:56px;display:flex;align-items:center;
+  font-weight:700;font-size:15px;cursor:pointer;list-style:none}
+.por summary::-webkit-details-marker{display:none}
+.por summary::after{content:"+";margin-left:auto;color:var(--hot-ink);font-size:20px}
+.por[open] summary::after{content:"\2212"}
+.por div{padding:0 4px 18px;font-size:14px;line-height:1.62;color:var(--dim)}
+.por b{color:var(--ink)}
+.podpis{margin:26px 4px 8px;padding-top:16px;border-top:2px solid var(--line);
+  font-size:12px;line-height:1.7;color:var(--dim);text-align:center}
+.podpis b{color:var(--ink)}
+body.pisze .feed{padding-bottom:calc(var(--pasek-h,150px) + var(--klawiatura,0px) + 12px)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* Wstrzymany alarm: przerywana obwodka i inne slowo. Stan niesie KSZTALT,
+   nie sama barwe — ta sama zasada co przy stemplach wiadomosci. */
+.sos[data-state="wstrzymany"]{background:var(--panel2);border:3px dashed var(--hot);animation:none}
+.sos[data-state="wstrzymany"] .sos-glyph{color:var(--hot-ink);font-size:32px}
+.sos-timer{font:500 15px/1.3 var(--f-mono);color:var(--live-ink);
+  letter-spacing:.06em;min-height:20px}
+.sos[data-state="armed"]{background:var(--panel2);border:3px solid var(--hot);
+  animation:none;
+  box-shadow:0 0 0 1px var(--hot) inset,0 0 48px -8px var(--hot)}
+.sos[data-state="armed"] .sos-glyph{color:var(--hot-ink);font-size:42px}
+.sos[data-state="armed"] .sos-sub2{color:var(--dim);opacity:1}
+@keyframes breath{0%,100%{box-shadow:0 0 0 6px var(--panel),0 0 26px var(--hot-glow),0 0 70px var(--hot-glow)}
+  50%{box-shadow:0 0 0 6px var(--panel),0 0 46px var(--hot-glow),0 0 120px var(--hot-glow)}}
+.hop{position:absolute;inset:0;border-radius:50%;border:2px solid transparent;
+  pointer-events:none;transition:border-color .28s ease,transform .5s cubic-bezier(.2,.9,.2,1)}
+.hop[data-h="1"]{transform:scale(1.14)}
+.hop[data-h="2"]{transform:scale(1.3)}
+.hop[data-h="3"]{transform:scale(1.46)}
+.hop.ack{border-color:var(--live-ink)}
+.sos-sub{margin:10px 0 0;color:var(--dim);font-size:14px;text-align:center;min-height:22px}
+/* Jedyna rzecz, ktora czlowiek w panice musi wiedziec o SOS, a ktora dotad
+   stala wylacznie w PORADNIKU — czyli tam, gdzie wtedy nikt nie zaglada. */
+.sos-info{margin:14px 0 0;color:var(--dim);font-size:13px;text-align:center}
+/* Stan kostki na PIERWSZYM ekranie. Panel otwiera sie po to, zeby zobaczyc
+   urzadzenie, ktore sie trzyma w reku — a do 19.08 nie mowil o nim nic poza
+   liczba slyszanych kostek. Kazdy wiersz jest wielkoscia ZMIERZONA; czego
+   kostka nie mierzy, tego tu nie ma. */
+.stan-kostki{margin-top:18px}
+.stan-kostki .kv{padding:5px 0;align-items:baseline}
+.stan-kostki .kv span{text-align:right}
+/* Dluga wartosc (np. „z kabla — kostka nie ma ogniwa") nie miesci sie obok
+   etykiety na waskim telefonie i wchodzila pod nia. Wtedy wiersz ma sie
+   rozlozyc na dwa poziomy, a nie zachodzic sam na siebie. */
+@media (max-width:400px){
+  .stan-kostki .kv{flex-direction:column;gap:1px}
+  .stan-kostki .kv span{text-align:left}
+}
+.stan-uwaga{margin:10px 0 14px;color:var(--hot-ink);font-size:12.5px;line-height:1.45}
+.stan-uwaga:empty{display:none}
+.cancel{display:none;margin:10px auto 0;min-height:64px;min-width:220px;
+  background:none;border:1px solid var(--line);border-radius:10px;color:var(--dim);
+  font:400 15px var(--f-dsp);letter-spacing:.05em;cursor:pointer}
+/* Przy uzbrojonym alarmie jedyna decyzja uzytkownika to ZATRZYMAC — wiec
+   przycisk odwolania jest pelnowartosciowy, nie duch. Celowo NIE pomaranczowy:
+   to barwa alarmu, a odwolanie jest wyjsciem z niego. */
+.cancel.on{display:block;width:100%;min-height:72px;background:var(--panel);
+  border:2px solid var(--ink);color:var(--ink);font-weight:600;font-size:17px}
+#s-pomoc .frame{margin:14px 0 10px}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:3px 0}
+.kv b{font-weight:500;color:var(--dim)}
+.kv span{color:var(--ink)}
+.livec{color:var(--live-ink);text-shadow:0 0 12px var(--live-glow)}
+
+/* KANAL + threads */
+.thread.on{display:flex;flex-direction:column;justify-content:flex-end;
+  min-height:calc(100dvh - 196px);padding-top:12px}
+.feed{display:flex;flex-direction:column;gap:8px}
+.msg{max-width:86%;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:9px 12px;font-size:17px;line-height:1.45}
+.msg .meta{display:flex;justify-content:space-between;gap:10px;
+  font:500 11px/1 ui-monospace,monospace;letter-spacing:.06em;
+  color:var(--dim);margin:0 0 4px}
+.msg .meta .who{color:var(--ink)}
+/* „Czeka na potwierdzenie" nie moze byc odcieniem obok „nadaje": pomiar dal
+   dE 10,4 przy deuteranopii, czyli nierozroznialne. Stan niesie KSZTALT —
+   ta sama barwa co nadawanie, ale obrys zamiast wypelnienia. */
+.msg .meta .st-pend{color:var(--hot-ink);border:2px solid currentColor;border-radius:999px;
+  padding:0 6px;background:none}
+.msg .meta .st-ok{color:var(--live-ink)}
+.msg .meta .st-err{color:var(--hot-ink);border:2px solid currentColor;border-radius:4px;
+  padding:0 6px;text-decoration:line-through}
+.msg .meta .st-ok,.msg .meta .snr{color:var(--live-ink)}
+.msg.me{align-self:flex-end;background:var(--panel2)}
+.msg.me .meta .who{color:var(--dim)}
+.msg.alarm{border-color:var(--hot-ink);box-shadow:0 0 0 1px var(--hot) inset}
+/* Okno pisania. Wysokosc nawigacji to 64 px (cel dotykowy), nie 58 — przy
+   starej wartosci pasek nachodzil na zakladki i zjadal ich gorna krawedz. */
+/* Wysokosc nawigacji MIERZYMY (--nav-h), zamiast wpisywac liczbe: zakladki
+   urosly do 64 px celu dotykowego i kazda magiczna stala natychmiast sklamala,
+   przez co pasek pisania zjadal ich gorna krawedz. */
+.chatbar{position:fixed;left:0;right:0;bottom:calc(var(--nav-h, 64px) + env(safe-area-inset-bottom) + var(--klawiatura, 0px));
+  display:none;flex-direction:column;gap:8px;padding:10px 14px 12px;
+  background:var(--panel2);border-top:2px solid var(--line);z-index:3}
+.chatbar.on{display:flex}
+/* Kanal musi konczyc sie NAD paskiem pisania, inaczej ostatnia wiadomosc —
+   czyli ta, na ktorej najbardziej zalezy — chowa sie pod polem tekstowym. */
+body.pisze .feed{padding-bottom:calc(var(--pasek-h, 150px) + 12px)}
+.chatbar .wiersz{display:flex;gap:8px}
+/* Gotowe zwroty: pod stresem, w rekawiczkach, w nocy — pisanie jest najgorszym
+   z mozliwych interfejsow. Jedno dotkniecie zamiast dwudziestu, i krotsza
+   wiadomosc, czyli mniej czasu antenowego. */
+.zwroty{display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;margin:0 -14px;padding:0 14px;
+  /* cieniowanie krawedzi mowi, ze pasek jedzie dalej — bez tego ostatni zwrot
+     wyglada na uciety przez blad, a nie na zapowiedz kolejnych */
+  -webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 28px),transparent 100%);
+  mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 28px),transparent 100%)}
+.zwroty::-webkit-scrollbar{display:none}
+.chatbar .zwroty button{flex:none;min-height:44px;padding:0 16px;border-radius:999px;
+  border:2px solid var(--line);background:none;color:var(--dim);
+  font:600 14px var(--f-body);letter-spacing:0;white-space:nowrap;cursor:pointer}
+.chatbar .zwroty button:active{background:var(--panel);border-color:var(--hot-ink);color:var(--ink)}
+/* Licznik: nie ozdoba. Ramka ponad 176 bajtow jest po cichu wyrzucana przez
+   mostek, wiec bez tego dlugi tekst ginie, a uzytkownik widzi NADANO. */
+.licznik{font-family:var(--f-mono);font-size:11px;letter-spacing:.06em;
+  color:var(--dim);text-align:right;min-height:14px}
+.licznik.blisko{color:var(--hot-ink)}
+.licznik.za-duzo{color:var(--hot-ink);font-weight:700}
+/* Wygaszenie do 45% dawalo na kremowym tle kontrast rzedu 1,9:1 i pierwsze
+   wrazenie z pustego kanalu brzmialo „nadawanie nie dziala". Wariant obrysowy
+   mowi to samo — nieaktywny — i pozostaje widoczny. */
+.chatbar button.wyslij:disabled{background:none;border:2px solid var(--line);
+  color:var(--dim);cursor:not-allowed}
+/* Pusty kanal mowi, co zrobic — zamiast pokazywac pustke. */
+.pusto{padding:40px 24px;text-align:center;color:var(--dim);font-size:15px;line-height:1.6}
+.pusto b{display:block;color:var(--ink);font-family:var(--f-dsp);font-size:17px;margin-bottom:8px}
+.chatbar input{flex:1;background:var(--bg);padding:0 12px}
+.chatbar input:focus{border-color:var(--hot-ink)}
+.chatbar button{background:var(--hot);border:0;border-radius:8px;color:#0a0d11;
+  font:400 14px var(--f-dsp);padding:0 20px;min-height:64px;letter-spacing:.06em;
+  cursor:pointer;box-shadow:0 0 14px var(--hot-glow)}
+
+/* WEZLY */
+#s-wezly{padding-top:12px}
+.nodes-top{display:flex;justify-content:space-between;align-items:center;margin:0 0 10px}
+.nodes-top h2{margin:0}
+/* ghost buttons: refresh the list, step back out of a thread */
+.refresh,.back{background:none;border:1px solid var(--line);border-radius:8px;
+  color:var(--dim);min-height:64px;cursor:pointer}
+.refresh{font:400 12px var(--f-dsp);padding:0 14px;letter-spacing:.06em}
+.row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+  background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:12px 14px;margin:0 0 8px;cursor:pointer;color:var(--ink);font:inherit}
+.ghdr{font-size:11px;letter-spacing:.14em;margin:14px 0 6px}
+.row:active{border-color:var(--hot-ink)}
+.row .dotu{width:8px;height:8px;border-radius:50%;background:var(--hot);
+  box-shadow:0 0 8px var(--hot-glow);flex:none;visibility:hidden}
+.row.unread .dotu{visibility:visible}
+.row .nm{font-weight:600}
+.row .sub{display:block;font:500 11px/1.4 ui-monospace,monospace;color:var(--dim);
+  letter-spacing:.04em}
+.row .go2{margin-left:auto;color:var(--dim)}
+.empty{color:var(--dim);font-size:14px;text-align:center;padding:30px 0}
+.axis{position:relative;height:64px;margin:0 0 12px;padding:0;overflow:hidden}
+.axis .axl,.axis .axr{position:absolute;bottom:4px;font:500 10px ui-monospace,monospace;
+  letter-spacing:.1em;color:var(--dim)}
+.axis .axl{left:8px}.axis .axr{right:8px}
+/* Kolor byl wpisany na sztywno pod ciemne tlo, wiec w motywie jasnym kropka
+   znikala razem z wezlem, ktory reprezentuje — to utrata danych, nie kosmetyka. */
+.axd{position:absolute;width:7px;height:7px;border-radius:50%;
+  background:var(--dim);opacity:.55;transition:left .4s ease,top .4s ease}
+.axd.fresh{background:var(--live);box-shadow:0 0 8px var(--live-glow)}
+.axd.warm{background:var(--hot);opacity:1;box-shadow:inset 0 0 0 2px var(--bg)}
+.axis .sweepline{position:absolute;top:0;bottom:0;width:2px;background:var(--live);
+  opacity:0;pointer-events:none}
+.axis.sweep .sweepline{animation:sweep .6s ease-out}
+@keyframes sweep{0%{opacity:.9;left:0}100%{opacity:0;left:100%}}
+.tbar{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.back{min-width:48px;font:400 16px var(--f-dsp)}
+.tbar .tn{font-weight:700;letter-spacing:.08em}
+.tbar .ts{margin-left:auto;font:500 11px ui-monospace,monospace;color:var(--live-ink)}
+
+/* USTAWIENIA */
+#s-ust{padding-top:12px}
+label.f{display:block;font-size:12px;letter-spacing:.12em;margin:14px 0 5px}
+input.f,select.f{width:100%;background:var(--panel);padding:11px 12px}
+.btn{display:inline-block;background:var(--panel);border:1px solid var(--hot);
+  color:var(--hot-ink);border-radius:8px;font:400 14px var(--f-dsp);padding:0 16px;
+  min-height:64px;letter-spacing:.05em;cursor:pointer;margin:12px 8px 0 0}
+.btn:active{background:var(--hot);color:#fff}
+
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;z-index:2;
+  background:var(--panel2);border-top:1px solid var(--line);
+  padding-bottom:max(8px,env(safe-area-inset-bottom))}
+nav button{flex:1;position:relative;background:none;border:0;color:var(--dim);
+  font:600 11px/1 var(--f-mono);letter-spacing:.1em;padding:0;min-height:64px;cursor:pointer}
+nav button svg{display:block;width:24px;height:24px;margin:0 auto 4px}
+nav button.on{color:var(--ink);box-shadow:inset 0 2px 0 var(--ink)}
+nav button .bdg{position:absolute;top:6px;right:calc(50% - 18px);width:8px;
+  height:8px;border-radius:50%;background:var(--hot);
+  box-shadow:0 0 8px var(--hot-glow);display:none}
+nav button.unread .bdg{display:block}
+/* Uzbrojony alarm musi byc widoczny globalnie: pierscien (obrys, inny KSZTALT
+   niz kropka nieprzeczytanych) na zakladce POMOC + licznik w naglowku. */
+nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24px);
+  width:9px;height:9px;border-radius:50%;border:3px solid var(--hot);
+  box-shadow:0 0 8px var(--hot-glow)}
+.hs-sos{display:none;color:var(--hot-ink);font:700 12px var(--f-mono);letter-spacing:.06em}
+.hs-sos.on{display:inline}
+@media(prefers-reduced-motion:reduce){.sos,.axis.sweep .sweepline{animation:none}
+  .hop{transition:border-color .28s ease}}
+
+/* ===== ETER — panel przyrządowy ===================================
+   Rejestr: Nostromo / Esper, a nie neon. Doktryna zabrania poświat
+   i gradientów, więc „cyberpunk" robimy GĘSTOŚCIĄ, monospacem, włosowymi
+   liniami i ruchem omiatającym — nie blaskiem.
+   ZASADA TWARDA: na tym ekranie każdy piksel jest wielkością ZMIERZONĄ.
+   Nie ma tu widma ani wodospadu, bo kostka nie robi FFT — taki obraz byłby
+   ozdobą udającą pomiar. */
+#s-eter{padding:12px 0 0}
+.eter-blok{border:2px solid var(--line);margin:0 12px 10px;background:var(--panel2)}
+.eter-blok h2{margin:0;padding:8px 12px;border-bottom:2px solid var(--line);
+  font:600 10px/1 var(--f-mono);letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
+.eter-blok .in{padding:12px}
+.radar{display:block;width:100%;height:auto}
+.osczasu{display:block;width:100%;height:auto}
+.eter-legenda{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:6px 12px 10px;font:11px var(--f-mono);letter-spacing:.06em;color:var(--dim)}
+/* dluga nota uczciwosci nie moze sie gniesc z licznikiem w jednym wierszu */
+.eter-legenda #radar-p{flex:none;margin-left:auto;white-space:nowrap;color:var(--live-ink)}
+.tabelka{display:grid;grid-template-columns:1fr auto;gap:0}
+.tabelka div{display:contents}
+.tabelka dt,.tabelka dd{margin:0;padding:9px 12px;border-bottom:1px solid var(--line);
+  font:12px var(--f-mono);letter-spacing:.05em}
+.tabelka dt{color:var(--dim);text-transform:uppercase}
+.tabelka dd{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+.tabelka dd.zywy{color:var(--live-ink)}
+.tabelka dd.cisza{color:var(--dim)}
+</style></head>
+<body>
+<header>
+  <svg viewBox="0 0 512 512" aria-hidden="true">
+    <rect x="84" y="216" width="80" height="80" transform="rotate(45 124 256)" fill="#ff5d3a"/>
+    <path d="M194 171c80 45 80 125 0 170M244 102c168 78 168 230 0 308" fill="none" stroke-width="42" stroke-linecap="square"/>
+  </svg>
+  <div class="hname">BIPER</div>
+  <div class="hstat"><span id="hs-sos" class="hs-sos"></span><span id="hs">...</span><span class="led" id="led"></span></div>
+</header>
+<main>
+  <p id="komunikat" role="status" aria-live="polite" aria-atomic="true" class="sr"></p>
+  <section id="s-pomoc" class="on">
+    <div class="tele frame mono" id="tele" role="status">SŁYSZĘ 0 &middot; BAT --</div>
+    <div class="sos-zone">
+      <button class="sos" id="sos" data-state="idle" aria-describedby="sos-sub">
+        <span class="hop" data-h="1"></span><span class="hop" data-h="2"></span>
+        <span class="hop" data-h="3"></span>
+        <span class="sos-glyph" id="sos-glyph">SOS</span>
+        <span class="sos-sub2" data-k="sos_sub">potrzebuje pomocy</span>
+        <span class="sos-timer" id="sos-timer" aria-hidden="true"></span>
+      </button>
+    </div>
+    <p class="sos-sub" id="sos-sub" role="alert"></p>
+    <button class="cancel" id="cancel" data-k="b_cancel">ANULUJ ALARM</button>
+    <p class="sos-info" data-k="sos_powtarza">Alarm powtarza się co minutę, aż go odwołasz.</p>
+    <div class="frame stan-kostki" id="stan-kostki">
+      <h2 data-k="h_stan">TWOJA KOSTKA</h2>
+      <div class="kv"><b data-k="k_name">nazwa</b><span id="s-nazwa" class="mono">&mdash;</span></div>
+      <div class="kv"><b data-k="k_tryb">tryb radia</b><span id="s-tryb" class="mono">&mdash;</span></div>
+      <div class="kv"><b data-k="k_slyszy">słyszy</b><span id="s-slyszy" class="mono">&mdash;</span></div>
+      <div class="kv"><b data-k="k_zasil">zasilanie</b><span id="s-zasil" class="mono">&mdash;</span></div>
+      <div class="kv"><b data-k="k_praca">czas pracy</b><span id="s-praca" class="mono">&mdash;</span></div>
+      <div class="kv"><b data-k="k_hotspot">hotspot</b><span id="s-hotspot" class="mono">&mdash;</span></div>
+      <p class="stan-uwaga" id="s-uwaga" data-k="stan_okno"></p>
+    </div>
+    <div class="frame" id="wezel-ramka" hidden><h2 data-k="h_node">WĘZEŁ</h2>
+      <div class="kv"><b data-k="k_name">nazwa</b><span id="v-name" class="mono">&mdash;</span></div>
+      <div class="kv" aria-live="polite" aria-atomic="true"><b data-k="k_ack">odezwało się sąsiadów</b><span id="v-ack" class="mono livec">0</span></div>
+    </div>
+  </section>
+  <section id="s-czat" class="thread"><div class="feed" id="feed" role="log" aria-live="polite" aria-relevant="additions"></div></section>
+  <section id="s-wezly">
+    <div id="nodes-list">
+      <div class="nodes-top"><h2 data-k="h_nodes">SŁYSZANE KOSTKI</h2>
+        <button class="refresh" id="b-sync" data-k="b_sync">ODSWIEZ</button></div>
+      <div class="axis frame" id="axis" style="display:none"></div>
+      <div id="nodes"></div>
+      <p class="empty" id="nodes-empty" data-k="e_nodes">cisza — wyślij ADVERT w ustawieniach,<br>żeby sąsiedzi Cię dodali</p>
+    </div>
+    <div id="node-thread" style="display:none">
+      <div class="tbar"><button class="back" id="b-back" aria-label="wstecz" data-k-aria="a_wstecz"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <span class="tn" id="tn"></span><span class="ts" id="tsig"></span></div>
+      <div class="thread on" style="min-height:calc(100dvh - 250px)">
+        <div class="feed" id="dfeed"></div></div>
+    </div>
+  </section>
+  <section id="s-eter">
+    <div class="eter-blok"><h2 data-k="e_kto">Kto jest wokoło</h2>
+      <div class="in"><svg class="radar" id="radar" role="img" viewBox="0 0 240 156" aria-label="Drabina przeskoków słyszanych kostek" data-k-aria="a_radar"></svg></div>
+      <div class="eter-legenda"><span id="radar-l" data-k="e_legenda">bezpośrednio · przez przekaźnik</span><span id="radar-p">—</span></div>
+    </div>
+    <div class="eter-blok"><h2 data-k="e_godzina">Ostatnia godzina w eterze</h2>
+      <div class="in"><svg class="osczasu" id="osczasu" role="img" viewBox="0 0 240 64" aria-label="Aktywność w ostatniej godzinie" data-k-aria="a_os"></svg></div>
+      <div class="eter-legenda"><span data-k="e_60">60 min temu</span><span data-k="e_teraz">teraz</span></div>
+    </div>
+    <div class="eter-blok"><h2 data-k="e_przyrzady">Przyrządy</h2>
+      <dl class="tabelka" id="przyrzady"></dl>
+    </div>
+  </section>
+  <section id="s-ust">
+    <label class="f" data-k="f_tryb">TRYB RADIA</label>
+    <div class="frame">
+      <div class="kv"><b id="tryb-nazwa" class="mono">—</b><span id="tryb-opis" data-k="tryb_czekam">odczytuje z kostki…</span></div>
+      <p style="color:var(--dim);font-size:12px;margin:8px 0 0" data-k="tryb_gest">Zmienia się trzema kliknięciami przycisku na kostce.</p>
+    </div>
+    <label class="f" for="f-name" data-k="f_name">TWOJA NAZWA</label>
+    <input class="f mono" id="f-name" maxlength="30">
+    <button class="btn" id="b-name" data-k="b_save">ZAPISZ</button>
+    <button class="btn" id="b-adv" data-k="b_adv">ROZGLOS (ADVERT)</button>
+    <label class="f" for="f-theme" data-k="f_theme">MOTYW</label>
+    <select class="f" id="f-theme">
+      <option value="dark" data-k="o_dark">ciemny</option>
+      <option value="light" data-k="o_light">jasny</option>
+    </select>
+    <label class="f" for="f-lang">JĘZYK / LANGUAGE</label>
+    <select class="f" id="f-lang"><option value="pl">polski</option><option value="en">English</option></select>
+    <label class="f" data-k="f_a2hs">NA EKRAN GLOWNY</label>
+    <div class="frame">
+      <div class="kv"><b>iPhone</b><span data-k="a2hs_ios">Udostepnij &rarr; Do ekranu poczatk.</span></div>
+      <div class="kv"><b>Android</b><span data-k="a2hs_and">Menu &#8942; &rarr; Dodaj do ekranu</span></div>
+      <p style="color:var(--dim);font-size:12px;margin:8px 0 0" data-k="a2hs_note">Ikona
+      dziala, gdy telefon jest w sieci kostki (przycisk 3 s).</p>
+    </div>
+    <label class="f" data-k="f_bak">KOPIA ZAPASOWA</label>
+    <div class="frame">
+      <div class="kv"><span id="bak-info" class="mono">&mdash;</span></div>
+      <button class="btn" id="b-restore" data-k="b_restore" disabled>PRZYWROC</button>
+    </div>
+    <label class="f" data-k="k_radio">RADIO</label>
+    <div class="frame"><span id="v-radio" class="mono">&mdash;</span></div>
+    <p style="color:var(--dim);font-size:12px;margin-top:22px" id="ver" class="mono"></p>
+  </section>
+</main>
+<div class="chatbar" id="chatbar">
+  <div class="zwroty" id="zwroty"></div>
+  <div class="wiersz">
+    <input id="ci" autocomplete="off" enterkeyhint="send" data-k-aria="ph_msg" placeholder="wiadomosc do wszystkich...">
+    <button id="cs" class="wyslij" data-k="b_send">NADAJ</button>
+  </div>
+  <div class="licznik" id="licznik" role="status" aria-live="polite"></div>
+</div>
+<section id="s-info">
+    <div id="poradnik"></div>
+    <p class="podpis mono">Biper &middot; <b>esp32ai.me</b><br>Tomasz Fiedoruk &middot; fiedoruk.pl</p>
+  </section>
+  <nav>
+  <button id="t-pomoc" class="on"><svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12.5 8.5c2 2 2 5 0 7M15.5 5.5c3.6 3.6 3.6 9.4 0 13"/></svg><span data-k="t_help">POMOC</span></button>
+  <button id="t-czat"><span class="bdg"></span><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9"/><path d="M19.5 15.5c1.4 1.4 1.4 3.6 0 5" opacity=".6"/></svg><span data-k="t_chat">KANAŁ</span></button>
+  <button id="t-wezly"><span class="bdg"></span><svg viewBox="0 0 24 24"><circle cx="6" cy="17" r="2.2"/><circle cx="17" cy="6.5" r="2.2"/><path d="M7.7 15.4 15.3 8M9 4.5c1.6 1.6 1.6 4 0 5.6" opacity=".6"/><path d="M14.5 14c1.6 1.6 1.6 4 0 5.6" opacity=".6"/></svg><span data-k="t_nodes">WĘZŁY</span></button>
+  <button id="t-eter"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5" opacity=".55"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" opacity=".55"/></svg><span data-k="t_eter">ETER</span></button>
+  <button id="t-info"><svg viewBox="0 0 24 24"><path d="M5 5.5h6.5a2 2 0 0 1 2 2V19a2 2 0 0 0-2-2H5z"/><path d="M19 5.5h-5.5a2 2 0 0 0-2 2V19a2 2 0 0 1 2-2H19z" opacity=".6"/></svg><span data-k="t_info">PORADNIK</span></button>
+  <button id="t-ust"><svg viewBox="0 0 24 24"><path d="M5 8h9M17.5 8h1.5M5 16h3M11.5 16H19"/><circle cx="15.5" cy="8" r="2"/><circle cx="9.5" cy="16" r="2"/></svg><span data-k="t_set">USTAW</span></button>
+</nav>
+<script>
+"use strict";
+/* ===== tuning: every timing and limit the panel relies on, in one place ===== */
+var RECONNECT_MS=2500,   /* retry the cube socket this long after it drops */
+    SOS_PERIOD=60,       /* seconds between SOS retransmits while armed */
+    NODES_TICK_MS=30000, /* node list redraw, so "heard X ago" stays honest */
+    SAVED_FLASH_MS=1200, /* how long a button reads "saved" / "restored" */
+    RESTORE_GAP_MS=150,  /* pause between replayed contacts, so the cube keeps up */
+    SWEEP_MS=700,        /* axis sweep: the CSS animation plus slack */
+    FRESH_S=900,         /* "hearing now": 15 min */
+    WARM_S=3600,         /* "heard recently", and the axis right edge: 1 h */
+    AXIS_SPAN=Math.log(WARM_S/60+1), /* log x: the fresh end gets the room */
+    HOP_RINGS=3,         /* ack rings drawn around the SOS button */
+    PATH_DIRECT=0xFF,    /* MeshCore path byte: heard with no repeater between */
+    MOTYW_KEY="biper_motyw",
+    JEZYK_KEY="biper_jezyk",
+    BAK_KEY="biper_backup";
+/* ===== DOM + format helpers =====
+   Every id used below is in the static markup and is never replaced, so one
+   lookup each is enough. */
+var GLYPH_GO='<svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 5l7 7-7 7"/></svg>';
+var elCache={};
+function $(id){return elCache[id]||(elCache[id]=document.getElementById(id))}
+function pad2(v){return ("0"+v).slice(-2)}
+function dec(t){return lang==="pl"?t.replace(".",","):t} /* PL decimal comma */
+function fmtN(x){return dec(x.toFixed(1))}
+function fmtV(mv){return dec((mv/1000).toFixed(2))+"V"}
+function hops(n){
+  /* Polski ma odmiane przez przypadki, ktorej nie da sie zlozyc z szablonu,
+     wiec zostaje w kodzie. Kazdy inny jezyk bierze swoj string ze slownika —
+     wczesniej funkcja miala zaszyte PL/EN na sztywno i japonski uzytkownik
+     widzial "via 3 cubes", a klucz path_hops byl martwy we WSZYSTKICH jezykach. */
+  if(lang==="pl")return "przez "+n+(n===1?" kostkę":(n<5?" kostki":" kostek"));
+  if(lang==="en")return "via "+n+(n===1?" cube":" cubes");
+  return tr("path_hops").replace("%n",n)}
+function hhmm(){var d=new Date();return pad2(d.getHours())+":"+pad2(d.getMinutes())}
+/* ===== i18n ===== */
+var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:"radio",
+  k_ack:"odezwało się sąsiadów",err:"nie poszło",f_name:"TWOJA NAZWA",b_save:"ZAPISZ",b_adv:"ROZGŁOŚ SIĘ SĄSIADOM",
+  f_theme:"MOTYW",o_dark:"ciemny",o_light:"jasny",t_help:"POMOC",t_chat:"KANAŁ",
+  t_nodes:"WĘZŁY",a_zamknij:"zamknij",a_wstecz:"wstecz",a_radar:"Drabina przeskoków słyszanych kostek",a_os:"Aktywność w ostatniej godzinie",e_kto:"Kto jest wokoło",e_godzina:"Ostatnia godzina w eterze",e_przyrzady:"Przyrządy",e_legenda:"Biper nie zna kierunku ani odległości — to nie jest mapa",e_60:"60 min temu",e_teraz:"teraz",
+    t_info:"PORADNIK",
+    f_tryb:"TRYB RADIA",tryb_czekam:"odczytuje z kostki…",tryb_siec:"przekazuje cudze wiadomości dalej",tryb_sam:"nadaje tylko Twoje",tryb_gest:"Zmienia się trzema kliknięciami przycisku na kostce.",
+    t_set:"USTAW",b_send:"NADAJ",b_cancel:"ANULUJ ALARM",
+  h_nodes:"SŁYSZANE KOSTKI",b_sync:"ODŚWIEŻ",
+  e_nodes:"cisza — wyślij ADVERT w ustawieniach,<br>żeby sąsiedzi Cię dodali",
+  ph_msg:"wiadomość do wszystkich…",ph_dm:"wiadomość do: %s…",
+  g_now:"SŁYSZĘ TERAZ",g_past:"BYŁY SŁYSZANE",ax_now:"TERAZ",ax_old:"1h+",st_conn:"ŁĄCZĘ",st_on:"POŁĄCZONO",st_off:"BRAK ŁĄCZA",
+  wstrzymany:"WSTRZYMANY",nowa_wiad:"Nowa wiadomość od %s: %t",
+    armed:"NADAJĘ",next_tx:"następne nadanie",sos_fail:"błąd nadawania — spróbuj ponownie",
+  sos_cofnij:"Wysyłam za chwilę — dotknij, żeby przerwać.",
+  sos_powtarza:"Alarm powtarza się co minutę, aż go odwołasz.",
+  h_stan:"TWOJA KOSTKA",k_tryb:"tryb radia",k_slyszy:"słyszy",k_zasil:"zasilanie",
+  k_praca:"czas pracy",k_hotspot:"hotspot",
+  zasil_kabel:"z kabla — kostka nie ma ogniwa",
+  hotspot_zostalo:"%n min do końca okna",hotspot_krotko:"mniej niż minuta",
+  stan_okno:"Kiedy okno się skończy, kostka wyłączy Wi-Fi i dalej będzie nadawać radiem. Panel otworzysz znowu, przytrzymując przycisk trzy sekundy.",
+  stan_brak:"nie odczytano ze kostki",
+  sos_przerwane:"Przerwane — nic nie wysłano.",lad_przek:"przez przekaźniki",
+  wyslano:"wysłano",
+    saved:"zapisano",tele:"SŁYSZĘ %n &middot; BAT %b",tele_bez_baterii:"SŁYSZĘ %n %f",lb_kostka:"kostkę|kostki|kostek",t_eter:"ETER",
+  eter_pusto:"nikogo nie słychać",eter_cicho:"cicho przez godzinę",eter_brak_danych:"brak danych z tej godziny",
+  eter_slychac:"%n świeżych",p_slychac:"słychać teraz",p_ostatni:"ostatni sygnał",
+  p_snr:"jakość odbioru",p_zdarzen:"zdarzeń w eterze",p_lacze:"łącze z kostką",
+  p_zasilanie:"zasilanie",sent:"NADANO",confirmed:"DOSZŁO",
+  heard_ago:"słyszany %t temu",heard_now:"słyszany przed chwilą",path_direct:"bezpośrednio",path_nieznana:"trasa nieznana",
+  path_hops:"%n przesk.",just:"teraz",min_ago:"%n min",hrs_ago:"%n godz.",
+  sos_bez_lacza:"<b>Alarm wstrzymany</b> — nie ma łączności z kostką. Sprawdź, czy jej hotspot działa; próbuję dalej.",cancel_bez_lacza:"<b>Nie odwołano</b> — nie ma łączności z kostką. Alarm nadal jest uzbrojony.",
+    sos_text:"POMOC! Potrzebuję pomocy.",cancel_text:"Odwołuję alarm - jestem bezpieczny.",
+  f_a2hs:"NA EKRAN GŁÓWNY",a2hs_ios:"Udostępnij &rarr; Do ekranu począt.",
+  a2hs_and:"Menu &#8942; &rarr; Dodaj do ekranu",
+  a2hs_note:"Ikona działa, gdy telefon jest w sieci kostki (przycisk 3 s).",
+  f_bak:"KOPIA ZAPASOWA",bak_none:"brak kopii — zrobi się sama po synchronizacji",
+  bak_info:"kontaktów: %n · zapis: %t",b_restore:"PRZYWRÓĆ",restored:"przywrócono %n",
+  z1:"U mnie OK",z2:"Gdzie jesteś?",z3:"Wracam do domu",z4:"Czekam tutaj",
+  zostalo:"zostało %n znaków",brak_lacza:"nie ma łączności z kostką — sprawdź, czy hotspot działa",
+    za_dlugo:"o %n za dużo — skróć",
+  pusto_t:"Cicho na kanale",
+  pusto_p:"Nikt jeszcze nic nie napisał. Napisz pierwszy — usłyszą Cię wszyscy w zasięgu."},
+en:{sos_sub:"I need help",h_node:"NODE",k_name:"name",k_radio:"radio",
+  k_ack:"neighbours heard from",err:"not sent",f_name:"YOUR NAME",b_save:"SAVE",b_adv:"ANNOUNCE TO NEIGHBOURS",
+  f_theme:"THEME",o_dark:"dark",o_light:"light",t_help:"HELP",t_chat:"CHANNEL",
+  f_tryb:"RADIO MODE",tryb_czekam:"reading from the cube…",tryb_siec:"carries other people's messages onward",tryb_sam:"transmits only yours",tryb_gest:"Changed with three clicks of the button on the cube.",
+  t_nodes:"NODES",a_zamknij:"close",a_wstecz:"back",a_radar:"Hop ladder of audible cubes",a_os:"Activity in the last hour",e_kto:"Who is around",e_godzina:"The last hour on the air",e_przyrzady:"Instruments",e_legenda:"Biper knows no direction or distance — this is not a map",e_60:"60 min ago",e_teraz:"now",
+    t_info:"GUIDE",
+    t_set:"SETUP",b_send:"SEND",b_cancel:"CANCEL ALARM",
+  h_nodes:"HEARD CUBES",b_sync:"REFRESH",
+  e_nodes:"silence — send an ADVERT in setup<br>so neighbours add you",
+  ph_msg:"message to everyone...",ph_dm:"message to %s...",
+  g_now:"HEARING NOW",g_past:"HEARD BEFORE",ax_now:"NOW",ax_old:"1h+",st_conn:"LINKING",st_on:"LINKED",st_off:"NO LINK",
+  wstrzymany:"PAUSED",nowa_wiad:"New message from %s: %t",
+    armed:"ON AIR",next_tx:"next transmit",sos_fail:"send failed — try again",
+  sos_cofnij:"Sending in a moment — tap to stop.",
+  sos_powtarza:"The alarm repeats every minute until you cancel it.",
+  h_stan:"YOUR CUBE",k_tryb:"radio mode",k_slyszy:"hears",k_zasil:"power",
+  k_praca:"uptime",k_hotspot:"hotspot",
+  zasil_kabel:"from the cable — the cube has no cell",
+  hotspot_zostalo:"%n min left in the window",hotspot_krotko:"less than a minute",
+  stan_okno:"When the window ends, the cube switches Wi-Fi off and keeps transmitting on radio. Hold the button for three seconds to open the panel again.",
+  stan_brak:"not read from the cube",
+  sos_przerwane:"Stopped — nothing was sent.",lad_przek:"via repeaters",
+  wyslano:"sent",
+    saved:"saved",tele:"HEARD %n &middot; BAT %b",tele_bez_baterii:"HEARD %n %f",lb_kostka:"cube|cubes|cubes",t_eter:"AIR",
+  eter_pusto:"nobody heard",eter_cicho:"quiet for an hour",eter_brak_danych:"no data for this hour yet",
+  eter_slychac:"%n fresh",p_slychac:"heard now",p_ostatni:"last signal",
+  p_snr:"reception",p_zdarzen:"events on air",p_lacze:"link to cube",
+  p_zasilanie:"power",sent:"SENT",confirmed:"DELIVERED",
+  heard_ago:"heard %t ago",heard_now:"heard just now",path_direct:"direct",path_nieznana:"route unknown",
+  path_hops:"%n hops",just:"now",min_ago:"%n min",hrs_ago:"%n h",
+  sos_bez_lacza:"<b>Alarm paused</b> — no link to the cube. Check that its hotspot is on; still trying.",cancel_bez_lacza:"<b>Not cancelled</b> — no link to the cube. The alarm is still armed.",
+    sos_text:"HELP! I need help.",cancel_text:"Cancelling the alarm - I am safe.",
+  f_a2hs:"HOME SCREEN",a2hs_ios:"Share &rarr; Add to Home Screen",
+  a2hs_and:"Menu &#8942; &rarr; Add to Home screen",
+  a2hs_note:"The icon works while the phone is on the cube's network (3 s button).",
+  f_bak:"BACKUP",bak_none:"no backup yet — made automatically after a sync",
+  bak_info:"contacts: %n · saved: %t",b_restore:"RESTORE",restored:"restored %n",
+  z1:"I am OK",z2:"Where are you?",z3:"Heading home",z4:"Waiting here",
+  zostalo:"%n characters left",brak_lacza:"no link to the cube — check that its hotspot is on",
+    za_dlugo:"%n too many — shorten it",
+  pusto_t:"Quiet on the channel",
+  pusto_p:"Nobody has written yet. Be first — everyone in range will hear you."},
+};
+var lang="pl";
+function tr(k){return (L[lang][k]!==undefined)?L[lang][k]:L.pl[k]||k}
+function applyLang(){
+  if(document.body.dataset.tab==="info")rysujPoradnik();
+  /* Drugie przejscie: NAZWY DOSTEPNE. applyLang podmienialo tylko widoczna
+     tresc, wiec przy japonskim „wstecz" i „zamknij" zostawaly po polsku —
+     a dla osoby niewidomej to jedyna nazwa tych przyciskow. */
+  var lab=document.querySelectorAll("[data-k-aria]");
+  for(var j=0;j<lab.length;j++)
+    lab[j].setAttribute("aria-label", tr(lab[j].getAttribute("data-k-aria")));
+  document.documentElement.lang=lang;
+  if(document.getElementById("zwroty")){ustawZwroty();pustyKanal();odswiezLicznik()}
+  var tagged=document.querySelectorAll("[data-k]");
+  for(var i=0;i<tagged.length;i++)tagged[i].innerHTML=tr(tagged[i].getAttribute("data-k"));
+  setChatPlaceholder();setStat(linked?"st_on":"st_off");drawTele();drawNodes()}
+/* ===== protocol ===== */
+var CMD={APP_START:1,SEND_TXT:2,SEND_CHAN:3,GET_CONTACTS:4,GET_TIME:5,ADVERT:7,
+  SET_NAME:8,ADD_CONTACT:9,SYNC:10,GET_BATT:20};
+var RESP={OK:0,ERR:1,C_START:2,CONTACT:3,C_END:4,SELF_INFO:5,SENT:6,CURR_TIME:9,
+  NO_MORE:10,BATT:12,DM_V3:16,CHAN_V3:17};
+var PUSH={ADVERT:0x80,CONFIRMED:0x82,MSG_WAITING:0x83};
+var ws=null,linked=false,selfName="",sosArmed=false,sosNext=0,acks=0,
+    battMv=0,pendingSos=false,devTimeOfs=0,sosOdliczTimer=null,sosStart=0;
+var nodes={};        /* prefixHex -> {name,pub,last,path,unread,msgs:[]} */
+var openThread=null; /* prefixHex when a DM thread is open */
+var chatTarget="chan";
+function u8(a){return new Uint8Array(a)}
+function hex(b,off,n){var s="";for(var i=off;i<off+n;i++)
+  s+=pad2(b[i].toString(16));return s}
+function hexBytes(h){var a=new Uint8Array(h.length/2);
+  for(var i=0;i<a.length;i++)a[i]=parseInt(h.substr(i*2,2),16);
+  return a}
+/* text fields on the wire are raw bytes, never UTF-8 */
+function readText(b,from,to){
+  return TDEC.decode(b.subarray(from,to)).replace(/\u0000+$/,"")}
+/* UTF-8, nie charCodeAt. Stara wersja wpisywala jednostke UTF-16 do Uint8Array,
+   wiec kazdy znak spoza ASCII obcinal sie do jednego bajtu: "e z ogonkiem"
+   (U+0119) stawalo sie 0x19, a em-dash (U+2014) bajtem 0x14 — to byla przyczyna
+   urwanej ramki ANULUJ z lipca, zalatana wtedy usunieciem myslnika. Bez tego
+   kodera panel nie moze nadac ani polskiego, ani japonskiego. */
+var TENC=new TextEncoder(),TDEC=new TextDecoder("utf-8",{fatal:false});
+function textBytes(s){return TENC.encode(s)}
+function writeText(f,off,s){f.set(textBytes(s),off)}
+/* byte 1 of a received message is SNR in signed quarter-dB */
+function readSnr(b){return (new Int8Array(b.buffer,b.byteOffset+1,1))[0]/4}
+function setStat(k){
+  var mark=" err";
+  if(linked)mark=" on";
+  else if(k==="st_conn")mark="";
+  $("hs").textContent=tr(k);
+  $("led").className="led"+mark}
+/* one switch for "the cube is answering" */
+/* Jeden kanal dla czytnika ekranu. Panel do 18.08 mial dwa obszary live i oba
+   nie na tym: pasek przyrzadow recytowal, a wiadomosc, odezwanie sie sasiada
+   i zerwanie lacza nie istnialy. Krotka przerwa przed wpisem jest konieczna —
+   podmiana tekstu bez niej bywa polykana, gdy poprzedni komunikat jest ten sam. */
+function powiedz(t){
+  var e=$("komunikat"); if(!e||!t)return;
+  e.textContent=""; setTimeout(function(){e.textContent=t}, 50);
+}
+function setLinked(on){
+  var zmiana = (linked !== on);
+  linked=on;setStat(on?"st_on":"st_off");
+  /* SOS zostaje ZDATNY DO NACISNIECIA nawet bez lacza. Wylaczony przycisk
+     umieral w ciszy: czlowiek naciskal trzy razy, nic sie nie dzialo i nigdzie
+     nie bylo napisane dlaczego, a dla czytnika ekranu wypadal z kolejnosci Tab.
+     Odmowa musi zostac WYPOWIEDZIANA, nie tylko wykonana. */
+  $("sos").setAttribute("aria-disabled", on ? "false" : "true");
+  if(!sosArmed) setSosNote(on ? "" : tr("brak_lacza"));
+  if(zmiana) powiedz(tr(on ? "st_on" : "st_off"));
+  /* Przycisk NADAJ byl przeliczany WYLACZNIE przy pisaniu, wiec po utracie
+     lacza zostawal aktywny i klikniecie konczylo sie cichym return. Czlowiek
+     naciskal trzy razy i myslal, ze telefon sie zaciął. */
+  odswiezLicznik();
+}
+function isFresh(n){return n.last&&(now()-n.last)<FRESH_S}
+/* UWAGA: 0xFF to OUT_PATH_UNKNOWN — „nie znamy trasy powrotnej", a NIE
+   „slychac bez przekaznika". populateContactFromAdvert nadaje te wartosc
+   KAZDEMU nowo poznanemu wezlowi, wiec mowienie o nich „bezposrednio" bylo
+   twierdzeniem bez pokrycia. Bezposrednio = path 0. */
+function isDirect(n){return n.path===0}
+function trasaNieznana(n){return n.path===PATH_DIRECT||n.path===undefined}
+function drawTele(){
+  var heard=0;for(var p in nodes)if(isFresh(nodes[p]))heard++;
+  var batt=battMv?fmtV(battMv):"--";
+  /* Napiecie pokazujemy TYLKO wtedy, gdy urzadzenie je naprawde mierzy.
+     Zmierzone na C6L 18.08: biper_batt_mv() = 0 mV, bo plytka nie ma ani
+     baterii, ani jej pomiaru. Wypisanie "0,00 V" byloby liczba udajaca pomiar. */
+  var t = battMv > 0 ? tr("tele") : tr("tele_bez_baterii");
+  $("tele").innerHTML = t.replace("%n",heard).replace("%b",batt)
+                         .replace("%f",odmiana(heard,tr("lb_kostka")))}
+/* Polski ma trzy formy liczebnika, a nie dwie jak angielski: 1 kostkę,
+   2-4 kostki, 5+ kostek — z wyjatkiem nastek (12-14 ida jak 5+). Bez tego
+   pasek stanu pisal "SLYSZE 4 kostek", co widac na kazdym zrzucie do sieci. */
+function odmiana(n,formy){
+  var f=formy.split("|"),a=n%10,b=n%100;
+  if(n===1)return f[0];
+  return (a>=2&&a<=4&&(b<12||b>14))?f[1]:f[2]}
+function connect(){
+  setStat("st_conn");
+  var Socket=window.MOCK?FakeWS:WebSocket;
+  ws=new Socket("ws://"+location.host+"/ws");
+  ws.binaryType="arraybuffer";
+  ws.onopen=function(){
+    var name="BIPER-PWA",f=new Uint8Array(8+name.length);
+    f[0]=CMD.APP_START;f[1]=3;writeText(f,8,name);
+    ws.send(f);
+    ws.send(u8([CMD.GET_BATT]))};
+  ws.onmessage=function(e){onFrame(new Uint8Array(e.data))};
+  ws.onclose=function(){setLinked(false);setTimeout(connect,RECONNECT_MS)};
+}
+function now(){return Math.floor(Date.now()/1000)}
+function ago(ts){
+  if(!ts)return tr("just");
+  var d=now()-ts;if(d<0)d=0;
+  if(d<90)return tr("just");
+  if(d<5400)return tr("min_ago").replace("%n",Math.round(d/60));
+  return tr("hrs_ago").replace("%n",Math.round(d/3600))}
+function onFrame(b){
+  /* exactly one branch runs per frame, so these locals are shared on purpose */
+  /* Jeden DataView na cala ramke, od razu. Byl deklarowany tu, a przypisywany
+     tylko w galeziach SELF_INFO i CONTACT — a uzywany w RESP.SENT i
+     PUSH.CONFIRMED, czyli w galeziach, ktore nigdy tamtych nie wykonuja.
+     Efekt: TypeError przy KAZDYM potwierdzeniu wiadomosci prywatnej, przez
+     co znacznik NADANO nie powstawal, a kostka pokazywala DOSZLO. */
+  var code=b[0],dv=new DataView(b.buffer,b.byteOffset),pfx,name,txt,snr,node,i;
+  if(code===RESP.SELF_INFO){
+    setLinked(true);drawBackup();
+    var freq=dv.getUint32(48,true),sf=b[56];
+    name=readText(b,58,b.length);
+    selfName=name;
+    $("v-name").textContent=name;
+    /* Nazwa przychodzi ramka SELF_INFO, czyli PO pierwszym odczycie /stan —
+       bez tego karta na ekranie startowym pokazywala kreske do przelaczenia
+       zakladki, akurat w miejscu, ktore ma odpowiadac „co ja trzymam". */
+    if($("s-nazwa")) $("s-nazwa").textContent=name;
+    $("f-name").value=name;
+    /* Na drucie czestotliwosc jest w KILOHERCACH (MyMesh.cpp:1072 mnozy MHz x1000),
+       wiec dzielimy przez 1000, nie przez milion. Wczesniej 869,618 MHz
+       wyswietlalo sie jako „0.870 MHz". Ekran INFO liczy to niezaleznie
+       i pokazywal dobrze — rozjazd byl tylko w panelu. */
+    $("v-radio").textContent=(freq/1000).toFixed(3)+" MHz / SF"+sf;
+    ws.send(u8([CMD.GET_CONTACTS]));
+  }else if(code===RESP.C_START){
+    /* keep msgs across re-syncs: mark all, prune after C_END */
+    for(var p in nodes)nodes[p].stale=true;
+  }else if(code===RESP.CONTACT){
+    pfx=hex(b,1,6);name="";
+    name=readText(b,100,132); /* pole 32 B, NUL-padded */
+    if(!nodes[pfx])nodes[pfx]={unread:0,msgs:[]};
+    node=nodes[pfx];
+    node.name=name||("~"+pfx.slice(0,4));
+    node.pub=hex(b,1,32);
+    node.last=dv.getUint32(132,true);
+    node.path=b[35];
+    node.raw=hex(b,0,b.length);  /* full frame = ready-made restore record */
+    node.stale=false;
+  }else if(code===RESP.C_END){
+    for(var q in nodes)if(nodes[q].stale&&!nodes[q].msgs.length)delete nodes[q];
+    saveBackup();
+    drawTele();drawNodes();drawBackup();
+  }else if(code===RESP.BATT){
+    battMv=b[1]|(b[2]<<8);drawTele();
+  }else if(code===RESP.OK){
+    /* Kanal publiczny odpowiada samym OK i NIGDY nie dostaje potwierdzenia
+       odbioru. Zostawianie stempla „czeka" na zawsze bylo obietnica bez
+       pokrycia — wiadomosc poszla w eter i tyle wiemy. */
+    if(pendingSos)pendingSos=false;
+    markLastMine(stamp("sent",hhmm(),"st-pend"),true);
+  }else if(code===RESP.SENT){
+    /* Firmware oddaje tu 4-bajtowy znacznik oczekiwanego potwierdzenia
+       (MyMesh.cpp: „app needs to match this to RESP_CODE_SENT.tag"). Zapisujemy
+       go PRZY WIADOMOSCI — bez tego potwierdzenie ladowalo na ostatniej wlasnej
+       wiadomosci w OTWARTYM watku, czyli regularnie na cudzej. */
+    if(pendingSos)pendingSos=false;
+    markLastMine(stamp("sent",hhmm(),"st-pend"),false,b.length>=6?dv.getUint32(2,true):0);
+  }else if(code===RESP.ERR){
+    if(pendingSos){pendingSos=false;setSosNote(tr("sos_fail"))}
+    else markLastMine(stamp("err",hhmm(),"st-err"),true);
+  }else if(code===PUSH.CONFIRMED){
+    /* Ten sam ACK potrafi przyjsc kilka razy (ostrzega o tym sam firmware),
+       wiec dopasowujemy po znaczniku i stemplujemy TYLKO raz. */
+    stempluj(b.length>=5?dv.getUint32(1,true):0);
+  }else if(code===PUSH.ADVERT){eterZdarzenie();  /* advert = chwila w eterze */
+    if(sosArmed)odezwalSie(hex(b,1,6));
+    pfx=hex(b,1,6);
+    if(nodes[pfx])nodes[pfx].last=now()-devTimeOfs;
+    else ws.send(u8([CMD.GET_CONTACTS]));
+    drawTele();drawNodes();
+  }else if(code===PUSH.MSG_WAITING){
+    ws.send(u8([CMD.SYNC]))
+  }else if(code===RESP.CHAN_V3){
+    snr=readSnr(b);
+    txt=readText(b,11,b.length);
+    var who=txt,body=txt,sep=txt.indexOf(": ");
+    if(sep>0){who=txt.slice(0,sep);body=txt.slice(sep+2)}
+    addMsg("feed",who,body,snr,false,false);
+    powiedz(tr("nowa_wiad").replace("%s", who).replace("%t", body));
+    if(sosArmed)odezwalSie("k:"+who);
+    if(!$("s-czat").className.match(/on/))badge("t-czat",true);
+    ws.send(u8([CMD.SYNC]))
+  }else if(code===RESP.DM_V3){
+    pfx=hex(b,4,6);
+    snr=readSnr(b);
+    txt=readText(b,16,b.length);
+    if(!nodes[pfx])nodes[pfx]={name:"~"+pfx.slice(0,4),unread:0,msgs:[],last:now()};
+    node=nodes[pfx];
+    node.msgs.push({me:false,body:txt,snr:snr,t:hhmm()});
+    if(snr!=null){node.snr=snr;node.snrT=now()}   /* przyrzad ETERU czytal node.snr,
+      ktore nikt nie ustawial — wiersz „jakosc odbioru" pokazywal „—" ZAWSZE */
+    if(openThread===pfx)drawThread();
+    else{node.unread++;badge("t-wezly",true);drawNodes()}
+    ws.send(u8([CMD.SYNC]))
+  }
+}
+function sendChan(text){
+  var ts=now(),bt=textBytes(text),f=new Uint8Array(7+bt.length);
+  f[0]=CMD.SEND_CHAN;f[1]=0;f[2]=0;
+  new DataView(f.buffer).setUint32(3,ts,true);
+  writeText(f,7,text);
+  ws.send(f)}
+function sendDm(pfx,text){
+  var ts=now(),bt=textBytes(text),f=new Uint8Array(13+bt.length);
+  f[0]=CMD.SEND_TXT;f[1]=0;f[2]=0;
+  new DataView(f.buffer).setUint32(3,ts,true);
+  f.set(hexBytes(pfx),7);
+  writeText(f,13,text);
+  ws.send(f)}
+function sendName(s){
+  var f=new Uint8Array(1+textBytes(s).length);
+  f[0]=CMD.SET_NAME;writeText(f,1,s);
+  ws.send(f)}
+
+/* ===== OKNO PISANIA ===== */
+/* Limit zalezy od tego, DOKAD piszemy, i nie jest umowny.
+
+   DM: BaseChatMesh sprawdza dlugosc tekstu wobec MAX_TEXT_LEN (10 x 16 = 160 B)
+   i przy przekroczeniu ODRZUCA bledem. 160 jest wiec dokladnie na styk.
+   (Ramka wychodzi 13 + 160 = 173 B, czyli miesci sie w MAX_FRAME_SIZE 176 —
+   ale to NIE ta liczba ogranicza, tylko MAX_TEXT_LEN. Poprzedni komentarz
+   uzasadnial 160 przez 176-13=163 i byloby to mina dla nastepnej edycji.)
+
+   KANAL: firmware DOKLEJA przed tekstem „<nazwa wezla>: ", a gdy calosc
+   przekroczy MAX_TEXT_LEN, TNIE PO CICHU i odpowiada OK
+   (BaseChatMesh.cpp:495-498 + MyMesh.cpp:1145). Nasz wariant nie ustawia
+   ADVERT_NAME, wiec domyslna nazwa to 8 znakow hex klucza — prefiks 10 B,
+   realny limit 150 B. Przy stalym limicie 160 wiadomosc dochodzila UCIETA
+   w polowie zdania, a nadawca widzial swoj pelny tekst ze stemplem NADANO.
+   To ten sam blad, ktory naprawilismy dla ramki, tylko na innej sciezce
+   i bez zadnego sygnalu. Ciecie idzie po BAJCIE, wiec trafiajac w srodek
+   sekwencji UTF-8 zostawia krzaczek. */
+var MAX_TEKSTU = 160;
+function bajtow(t){return TENC.encode(t).length}
+function limitBajtow(){
+  if(chatTarget!=="chan")return MAX_TEKSTU;
+  return MAX_TEKSTU-(bajtow(selfName)+2);   /* „<nazwa>" + „: " */
+}
+
+function odswiezLicznik(){
+  var el=$("ci"), lic=$("licznik"), przycisk=$("cs");
+  var uzyte=bajtow(el.value), zostalo=limitBajtow()-uzyte;
+  lic.className="licznik"+(zostalo<0?" za-duzo":(zostalo<=25?" blisko":""));
+  /* Cisza, dopoki jest luzno — licznik ma sie odzywac, gdy zaczyna byc ciasno,
+     a nie towarzyszyc kazdej literze. */
+  if(!linked&&uzyte>0){lic.className="licznik za-duzo";lic.textContent=tr("brak_lacza");}
+  else if(uzyte===0){lic.textContent="";}
+  else if(zostalo<0){lic.textContent=tr("za_dlugo").replace("%n",-zostalo);}
+  else if(zostalo<=40){lic.textContent=tr("zostalo").replace("%n",zostalo);}
+  else {lic.textContent="";}
+  przycisk.disabled = uzyte===0 || zostalo<0 || !linked;
+}
+
+function ustawZwroty(){
+  var box=$("zwroty"); box.innerHTML="";
+  ["z1","z2","z3","z4"].forEach(function(k){
+    var b=document.createElement("button");
+    b.type="button"; b.textContent=tr(k);
+    b.onclick=function(){
+      var el=$("ci");
+      el.value = el.value ? el.value.replace(/\s*$/,"")+" "+tr(k) : tr(k);
+      /* Bez `focus()`: caly sens gotowych zwrotow polega na tym, zeby NIE
+         pisac — a wymuszona klawiatura zaslania pol ekranu i podnosi pasek.
+         Kursor stawiamy na koncu programowo, bez otwierania klawiatury. */
+      try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {}
+      odswiezLicznik();
+    };
+    box.appendChild(b);
+  });
+}
+
+/* Klawiatura telefonu zjada dolna polowe ekranu. Bez tego pasek pisania
+   zostaje POD nia i czlowiek pisze na slepo. */
+function zmierzNawigacje(){
+  var n=document.querySelector("nav");
+  if(n)document.documentElement.style.setProperty("--nav-h", Math.round(n.getBoundingClientRect().height)+"px");
+}
+
+function pilnujKlawiatury(){
+  if(!window.visualViewport)return;
+  var vv=window.visualViewport;
+  function dopasuj(){
+    var zaslona=Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    document.documentElement.style.setProperty("--klawiatura", zaslona+"px");
+    var f=$("feed"); if(f&&f.lastElementChild)f.lastElementChild.scrollIntoView({block:"end"});
+  }
+  vv.addEventListener("resize",dopasuj); vv.addEventListener("scroll",dopasuj); dopasuj();
+}
+
+function pustyKanal(){
+  var f=$("feed"); if(!f||f.children.length)return;
+  f.innerHTML='<div class="pusto"><b>'+esc(tr("pusto_t"))+"</b>"+esc(tr("pusto_p"))+"</div>";
+}
+function czyscPustke(){
+  var f=$("feed"), p=f&&f.querySelector(".pusto"); if(p)p.remove();
+}
+
+ustawZwroty();odswiezLicznik();zmierzNawigacje();pilnujKlawiatury();
+addEventListener("resize",zmierzNawigacje);
+
+
+/* ===== ETER — rysowanie z danych, które NAPRAWDĘ mamy ===== */
+/* Zdarzenia zbieramy sami: każdy advert i każda wiadomość znaczy chwilę
+   w eterze. To jedyne źródło tej osi — nic tu nie jest generowane. */
+var eterZdarzenia = [];
+var panelOd = Date.now();   /* od kiedy w ogole mamy czego sluchac */
+function eterZdarzenie(){ eterZdarzenia.push(Date.now());   /* ms — wlasny zegar osi */
+  if(eterZdarzenia.length>2000)eterZdarzenia.splice(0,1000); }
+
+/* Drabina przeskoków zamiast koła. Poprzedni rysunek był radarem: kąt brał
+   się z hasha klucza, promień z liczby przeskoków — ikonografia namiaru,
+   którego kostka NIE ZNA. Ktoś w blackoucie poszedłby „w stronę Zosi".
+   Wiersz = to, co naprawdę wiemy o trasie; oś pozioma = wiek (jak na osi
+   godziny niżej: lewo dawno, prawo teraz). Ani piksela ponad pomiar. */
+function rysujRadar(){
+  var sv=$("radar"); if(!sv)return;
+  var out=[], teraz=now(), ile=0, naj=0;   /* n.last jest w SEKUNDACH */
+  var R=[{y:34,t:tr("path_direct")},{y:82,t:tr("lad_przek")},{y:130,t:tr("path_nieznana")}];
+  for(var i=0;i<3;i++){
+    out.push('<text x="4" y="'+(R[i].y-13)+'" fill="var(--dim)" font-family="var(--f-mono)"'
+      +' font-size="9" letter-spacing=".08em">'+esc(R[i].t.toUpperCase())+'</text>');
+    out.push('<line x1="4" y1="'+R[i].y+'" x2="236" y2="'+R[i].y+'" stroke="var(--line)" stroke-width="1"/>');
+  }
+  out.push('<text x="4" y="150" fill="var(--dim)" font-family="var(--f-mono)" font-size="8">'+esc(tr("e_60"))+'</text>');
+  out.push('<text x="236" y="150" text-anchor="end" fill="var(--dim)" font-family="var(--f-mono)" font-size="8">'+esc(tr("e_teraz"))+'</text>');
+  var licz=[0,0,0];
+  for(var pfx in nodes){ var n=nodes[pfx]; if(!n.last)continue;
+    var wiek=teraz-n.last;
+    if(wiek>3600)continue;
+    ile++;
+    var w = isDirect(n) ? 0 : (trasaNieznana(n) ? 2 : 1);
+    var x = 10 + (1 - wiek/3600) * 222;
+    /* drugi punkt o tym samym wieku nie ma zaslonic pierwszego */
+    var y = R[w].y - ((licz[w]++ % 2) ? 8 : 0);
+    var swiezy = wiek < 900;
+    if(swiezy)naj++;
+    out.push('<circle cx="'+x.toFixed(1)+'" cy="'+y+'" r="'+(swiezy?6:4.5)+'"'
+      +' fill="'+(swiezy?'var(--live)':'none')+'" stroke="var(--live)" stroke-width="2"'
+      +(swiezy?'':' stroke-dasharray="3 3"')+'/>');
+  }
+  if(!ile) out.push('<text x="120" y="106" text-anchor="middle" fill="var(--dim)"'
+    +' font-family="var(--f-mono)" font-size="11">'+esc(tr("eter_pusto"))+'</text>');
+  sv.innerHTML=out.join("");
+  $("radar-p").textContent = naj ? tr("eter_slychac").replace("%n",naj) : "";
+}
+
+function rysujOs(){
+  var sv=$("osczasu"); if(!sv)return;
+  var teraz=Date.now(), kosze=new Array(60).fill(0), max=1;
+  for(var i=0;i<eterZdarzenia.length;i++){
+    var m=Math.floor((teraz-eterZdarzenia[i])/60000);
+    if(m>=0&&m<60){kosze[59-m]++; if(kosze[59-m]>max)max=kosze[59-m];}
+  }
+  var out=['<line x1="0" y1="63" x2="240" y2="63" stroke="var(--line)" stroke-width="1"/>'];
+  for(var k=0;k<60;k++){
+    if(!kosze[k])continue;
+    var h=Math.max(3, Math.round(kosze[k]/max*54));
+    out.push('<rect x="'+(k*4)+'" y="'+(62-h)+'" width="3" height="'+h+'" fill="var(--hot)"/>');
+  }
+  /* Os zbiera zdarzenia dopiero od OTWARCIA panelu, wiec pusta os po swiezym
+     wejsciu nie znaczy „cicho" — znaczy „nie wiem". Cisza jest twierdzeniem
+     o eterze i nie wolno jej postawic bez pomiaru; to ta sama zasada, co
+     NOT MEASURED w reszcie projektu. */
+  if(!eterZdarzenia.length)
+    out.push('<text x="120" y="36" text-anchor="middle" fill="var(--dim)"'
+      +' font-family="var(--f-mono)" font-size="11">'
+      +esc(tr(panelOd && Date.now()-panelOd > 3600000 ? "eter_cicho" : "eter_brak_danych"))+'</text>');
+  sv.innerHTML=out.join("");
+}
+
+function rysujPrzyrzady(){
+  var dl=$("przyrzady"); if(!dl)return;
+  var teraz=now(), swiezych=0, ostatni=null, snr=null;   /* sekundy */
+  for(var pfx in nodes){ var n=nodes[pfx]; if(!n.last)continue;
+    if(teraz-n.last<900)swiezych++;
+    if(!ostatni||n.last>ostatni)ostatni=n.last;
+    if(n.snr!=null)snr=n.snr; }
+  var w=[];
+  function rz(k,v,kl){w.push("<dt>"+esc(tr(k))+"</dt><dd"+(kl?' class="'+kl+'"':"")+">"+v+"</dd>")}
+  rz("p_slychac", swiezych, swiezych?"zywy":"cisza");
+  rz("p_ostatni", ostatni? ago(ostatni) : "—", ostatni?"":"cisza");
+  rz("p_snr", snr!=null? fmtN(snr)+" dB" : "—", snr!=null?"zywy":"cisza");
+  rz("p_zdarzen", eterZdarzenia.length);
+  rz("p_lacze", linked? tr("st_on") : tr("st_off"), linked?"zywy":"cisza");
+  if(battMv>0) rz("p_zasilanie", fmtV(battMv));
+  dl.innerHTML=w.join("");
+}
+
+function rysujEter(){ rysujRadar(); rysujOs(); rysujPrzyrzady(); }
+setInterval(function(){ if(document.body.dataset.tab==="eter")rysujEter(); }, 2000);
+
+/* ===== SOS ===== */
+function setSosNote(html){$("sos-sub").innerHTML=html}
+/* WebSocket.send() na gniezdzie CLOSED NIE rzuca bledu — po cichu wyrzuca dane.
+   Bez tej bramki zerwane lacze z kostka wygladalo dokladnie jak dzialajacy
+   alarm: co 60 s nowy wpis „NADANO", zegar odlicza, glif swieci NADAJE, a w eter
+   nie szlo NIC. To bylo najgrozniejsze klamstwo w tym pliku — czlowiek dostawal
+   pewnosc, ktorej panel nie mial. */
+function lacze(){return ws&&ws.readyState===1}
+function sosFire(){
+  if(!lacze()){
+    /* Bramka readyState zatrzymala klamstwo w TRANSMISJI, ale nie w OBRAZIE:
+       glif dalej mowil NADAJE, a prawda stala w czternastopunktowym akapicie
+       pod spodem. Stan niesie teraz najwiekszy element na ekranie. */
+    setSosNote(tr("sos_bez_lacza"));
+    $("sos").setAttribute("data-state","wstrzymany");
+    $("sos-glyph").textContent=tr("wstrzymany");
+    powiedz(tr("sos_bez_lacza"));
+    sosNext=5;return}
+  $("sos").setAttribute("data-state","armed");
+  $("sos-glyph").textContent=tr("armed");
+  pendingSos=true;
+  ws.send(u8([CMD.ADVERT,1]));
+  sendChan(tr("sos_text"));
+  addMsg("feed",selfName,tr("sos_text"),null,true,true);
+  setSosNote("");
+  sosNext=SOS_PERIOD}
+function armSos(){
+  if(sosArmed)return;
+  if(!linked){setSosNote(tr("sos_bez_lacza"));powiedz(tr("sos_bez_lacza"));return}
+  sosArmed=true;acks=0;odezwani={};
+  $("v-ack").textContent="0";
+  var rings=document.querySelectorAll(".hop");
+  for(var i=0;i<rings.length;i++)rings[i].className="hop";
+  $("sos").setAttribute("data-state","armed");
+  $("sos-glyph").textContent=tr("armed");
+  $("cancel").className="cancel on";
+  sosStart=Date.now();
+  $("t-pomoc").classList.add("alarm");
+  $("hs-sos").className="hs-sos on";
+  /* Licznik „odezwalo sie sasiadow" ma tresc dopiero od chwili alarmu.
+     Swiecace zielone 0 w spoczynku czytalo sie jak „nikogo nie ma" —
+     dokladnie odwrotnie do „SLYSZE 1 kostke" trzy centymetry wyzej. */
+  $("wezel-ramka").hidden=false;
+  sosFire()}
+/* Dotkniecie: start odliczania 3-2-1; dotkniecie W TRAKCIE = przerwij.
+   Wibracja co sekunde, jesli telefon umie. */
+function sosDotkniecie(){
+  if(sosArmed)return;
+  if(sosOdliczTimer){
+    clearInterval(sosOdliczTimer);sosOdliczTimer=null;
+    $("sos").setAttribute("data-state","idle");
+    $("sos-glyph").textContent="SOS";
+    setSosNote(tr("sos_przerwane"));powiedz(tr("sos_przerwane"));
+    return}
+  if(!linked){setSosNote(tr("sos_bez_lacza"));powiedz(tr("sos_bez_lacza"));return}
+  var zostalo=3;
+  $("sos").setAttribute("data-state","odlicza");
+  $("sos-glyph").textContent="3";
+  setSosNote(tr("sos_cofnij"));
+  if(navigator.vibrate)navigator.vibrate(80);
+  sosOdliczTimer=setInterval(function(){
+    zostalo--;
+    if(navigator.vibrate)navigator.vibrate(80);
+    if(zostalo<=0){
+      clearInterval(sosOdliczTimer);sosOdliczTimer=null;
+      $("sos").setAttribute("data-state","idle");
+      $("sos-glyph").textContent="SOS";
+      armSos();return}
+    $("sos-glyph").textContent=""+zostalo},1000)}
+function disarmSos(){
+  if(!sosArmed)return;
+  /* Odwolanie bez lacza jest gorsze niz brak odwolania: interfejs wracal do
+     spoczynku i wpisywal „Odwoluje alarm", wiec czlowiek byl pewny, ze odwolal,
+     a ratownicy dalej jechali. Alarm zostaje uzbrojony, dopoki odwolanie
+     naprawde nie pojdzie. */
+  if(!lacze()){setSosNote(tr("cancel_bez_lacza"));return}
+  sosArmed=false;
+  sendChan(tr("cancel_text"));
+  addMsg("feed",selfName,tr("cancel_text"),null,true,false);
+  $("sos").setAttribute("data-state","idle");
+  $("sos-glyph").textContent="SOS";
+  $("sos-timer").textContent="";
+  $("cancel").className="cancel";
+  $("t-pomoc").classList.remove("alarm");
+  $("hs-sos").className="hs-sos";$("hs-sos").textContent="";
+  setSosNote("")}
+setInterval(function(){
+  if(!sosArmed)return;
+  sosNext--;
+  if(sosNext<=0)sosFire();
+  $("sos-timer").textContent=tr("next_tx")+" 00:"+pad2(Math.max(sosNext,0));
+  var s=Math.floor((Date.now()-sosStart)/1000);
+  $("hs-sos").textContent=tr("armed")+" · "+pad2(Math.floor(s/60))+":"+pad2(s%60)},1000);
+$("sos").onclick=sosDotkniecie;
+$("cancel").onclick=disarmSos;
+/* ===== tabs / threads ===== */
+var tabs={pomoc:"s-pomoc",czat:"s-czat",wezly:"s-wezly",eter:"s-eter",info:"s-info",ust:"s-ust"};
+function badge(id,on){var el=$(id);
+  el.className=el.className.replace(" unread","")+(on?" unread":"")}
+function setChatPlaceholder(){
+  var t=tr("ph_msg");
+  if(chatTarget!=="chan"&&nodes[chatTarget])
+    t=tr("ph_dm").replace("%s",nodes[chatTarget].name);
+  $("ci").placeholder=t}
+function showChatbar(on){
+  $("chatbar").className="chatbar"+(on?" on":"");
+  document.body.classList.toggle("pisze",on);
+  if(on)requestAnimationFrame(function(){
+    var h=Math.round($("chatbar").getBoundingClientRect().height);
+    document.documentElement.style.setProperty("--pasek-h",h+"px");
+    var f=$("feed"); if(f&&f.lastElementChild)f.lastElementChild.scrollIntoView({block:"end"});
+  });
+}
+var PORADNIK={"pl":[["Czym to jest","Kostka radiowa. Rozmawia wprost z innymi kostkami — bez internetu, bez operatora, bez abonamentu. Telefon jest tylko ekranem i klawiaturą."],["Jeden przycisk, pięć gestów","<b>klik</b> — następny ekran kostki.<br><b>dwa kliki</b> — tryb ninja: cisza i ciemność.<br><b>trzy sekundy</b> — hotspot Wi-Fi, hasło pokazuje ekran.<br><b>trzy kliknięcia</b> — przełącznik radia: SIEĆ (kostka przekazuje cudze wiadomości dalej) albo SAM (nadaje tylko Twoje). Fabrycznie SIEĆ. Aktualny tryb pokazuje strona SIEĆ na ekranie kostki, a wybór zostaje po odłączeniu prądu.<br><b>dziesięć sekund</b> — WYMAZANIE kostki. Odliczanie zaczyna się po czwartej sekundzie, puszczenie przycisku anuluje."],["Jak wołać o pomoc","Zakładka POMOC, jeden duży przycisk. Alarm powtarza się co minutę, dopóki nie naciśniesz ANULUJ ALARM. Licznik pokazuje, ilu różnych sąsiadów odezwało się po alarmie — wspólny kanał nie daje potwierdzeń odbioru i nikt nie może ich obiecać."],["Dwie drogi rozmowy","<b>KANAŁ</b> słyszą wszyscy w zasięgu.<br><b>WĘZŁY</b> to rozmowa z jedną osobą, szyfrowana do niej. Jeśli treść ma zostać między wami, pisz w WĘZŁACH."],["Co mówi dioda","biały błysk — kostka właśnie wstała<br>niebieski błysk — telefon się połączył<br>magenta — czeka wiadomość<br>niebieski, powoli pulsuje — hotspot działa<br>zielony puls co trzy sekundy — wszystko gra<br>ciemno — tryb ninja"],["Jak daleko sięga","Na parterze kilkaset metrów. Na zewnątrz kilka kilometrów. Przekaźnik na dachu 5–10 km, w wysokim punkcie 30–40 km. To liczby podawane przez społeczność, nie nasz pomiar. Decyduje wysokość i to, co stoi po drodze — nie cena sprzętu."],["Czego to NIE robi","<b>Wspólnego kanału słucha każdy</b>, kto ma taką kostkę: klucz jest w otwartym kodzie. I każdy może na nim napisać, podpisując się dowolną nazwą — nie ufaj samemu podpisowi.<br><br><b>Radio da się namierzyć.</b> Zawsze. Alarm nadaje co minutę i na tym polega jego działanie.<br><br><b>Tryb ninja</b> wycisza kostkę dla ludzi obok, nie dla odbiornika.<br><br><b>Kto zabierze kostkę</b>, odczyta z niej wiadomości i będzie mógł pisać w Twoim imieniu. Na to jest wymazanie."],["Gdy coś nie działa","<b>Brak łączności</b> — sprawdź, czy telefon jest w sieci kostki. Hotspot włączasz, trzymając przycisk trzy sekundy.<br><b>Nikogo nie słychać</b> — sprawdź, czy obie anteny są przykręcone.<br><b>Pusta lista sąsiadów</b> — naciśnij ROZGŁOŚ w USTAW i poczekaj chwilę."]],"en":[["What this is","A radio cube. It talks directly to other cubes — no internet, no operator, no subscription. Your phone is only its screen and keyboard."],["One button, five gestures","<b>click</b> — next screen on the cube.<br><b>double click</b> — ninja mode: silent and dark.<br><b>three seconds</b> — Wi-Fi hotspot, password shown on screen.<br><b>three clicks</b> — radio switch: SIEC (the cube carries other people's messages onward) or SAM (it transmits only yours). SIEC from the factory. The current mode is shown on the cube's SIEC page, and the choice survives a power cut.<br><b>ten seconds</b> — WIPE the cube. The countdown starts after the fourth second; releasing the button cancels."],["Calling for help","The HELP tab, one large button. The alarm repeats every minute until you press CANCEL ALARM. The counter shows how many different neighbours have been heard from since — the shared channel gives no delivery confirmations and nobody can promise them."],["Two ways to talk","<b>CHANNEL</b> is heard by everyone in range.<br><b>NODES</b> is a conversation with one person, encrypted to them. If it should stay between you, write in NODES."],["What the LED says","white flash — the cube has just started<br>blue flash — a phone connected<br>magenta — a message is waiting<br>blue, slowly pulsing — the hotspot is on<br>green pulse every three seconds — all is well<br>dark — ninja mode"],["How far it reaches","A few hundred metres on the ground floor. A few kilometres outdoors. A repeater on a roof 5–10 km, on a high point 30–40 km. These are figures reported by the community, not our measurement. Height and what stands in the way decide — not the price of the hardware."],["What it does NOT do","<b>Anyone with a cube like this hears the shared channel</b>: the key is in open source code. And anyone can write on it under any name — do not trust a signature alone.<br><br><b>Radio can be located.</b> Always. The alarm transmits every minute and that is how it works.<br><br><b>Ninja mode</b> silences the cube for people nearby, not for a receiver.<br><br><b>Whoever takes the cube</b> will read your messages and be able to write in your name. That is what the wipe is for."],["When something is wrong","<b>No link</b> — check that the phone is on the cube's network. Hold the button for three seconds to start the hotspot.<br><b>Nobody is heard</b> — check that both antennas are screwed on.<br><b>Empty neighbour list</b> — press ANNOUNCE in SETTINGS and wait a moment."]]};
+/* Poradnik jest DANYMI, nie znacznikami: trzy jezyki tego samego tekstu w HTML
+   dalyby trzy kopie do utrzymania i trzy okazje, zeby sie rozjechaly. */
+function rysujPoradnik(){
+  var h="",d=PORADNIK[lang]||PORADNIK.en;
+  for(var i=0;i<d.length;i++)
+    h+='<details class="por"'+(i===0?" open":"")+'><summary>'+d[i][0]+'</summary><div>'+d[i][1]+'</div></details>';
+  $("poradnik").innerHTML=h;
+}
+/* Tryb radia czytamy z kostki przy kazdym wejsciu w USTAW, a nie raz przy
+   starcie: przelacza sie go GESTEM NA KOSTCE, wiec moze sie zmienic w trakcie
+   wizyty w panelu i wartosc zapamietana przy laczeniu bylaby klamstwem. */
+/* Jeden odczyt zasila DWA miejsca: karte na ekranie POMOC i wiersz TRYB RADIA
+   w USTAW. Wczesniej byl osobny endpoint zwracajacy samo slowo SIEC/SAM. */
+function fmtCzas(sek){
+  if(!(sek>=0))return "—";
+  var g=Math.floor(sek/3600), m=Math.floor(sek%3600/60);
+  return g? g+" h "+pad2(m)+" min" : m+" min";
+}
+function odczytajStan(){
+  fetch("/stan").then(function(r){return r.ok?r.json():null}).then(function(d){
+    if(!d){ $("s-nazwa").textContent=tr("stan_brak"); return }
+    var siec=(d.tryb==="SIEC");
+    /* USTAW — ten sam odczyt, jedno zrodlo prawdy */
+    if($("tryb-nazwa")){
+      $("tryb-nazwa").textContent=siec?"SIEC":"SAM";
+      $("tryb-opis").textContent=tr(siec?"tryb_siec":"tryb_sam");
+    }
+    $("s-nazwa").textContent=selfName||"—";
+    $("s-tryb").textContent=(siec?"SIEĆ":"SAM");
+    $("s-slyszy").textContent=d.slyszy+" "+odmiana(d.slyszy,tr("lb_kostka"));
+    /* Napiecie tylko wtedy, gdy plytka je mierzy. C6L nie ma ogniwa i to jest
+       informacja, nie brak: kostka milknie po odlaczeniu kabla. */
+    $("s-zasil").textContent = (d.mv>0) ? fmtV(d.mv) : tr("zasil_kabel");
+    $("s-praca").textContent=fmtCzas(d.praca_s);
+    var min=Math.round(d.hotspot_s/60);
+    $("s-hotspot").textContent = d.hotspot_s>0
+      ? (min>0 ? tr("hotspot_zostalo").replace("%n",min) : tr("hotspot_krotko"))
+      : (d.ssid||"—");
+    $("s-uwaga").textContent = d.hotspot_s>0 ? tr("stan_okno") : "";
+  }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
+}
+
+function show(t){
+  if(t==="info")rysujPoradnik();
+  if(t==="ust"||t==="pomoc")odczytajStan();
+  /* aria-current: dla czytnika ekranu piec zakladek bylo nierozroznialnych,
+     bo aktywna niosla wylacznie kolor i cien. */
+  for(var key in tabs){
+    var on=(key===t);
+    $(tabs[key]).className=(key==="czat"?"thread":"")+(on?" on":"");
+    var tab=$("t-"+key);
+    tab.className=(on?"on":"")+(tab.className.match(/unread/)?" unread":"")+(tab.className.match(/alarm/)?" alarm":"");
+    tab.setAttribute("aria-current", on ? "page" : "false")}
+  if(t==="czat"){badge("t-czat",false);chatTarget="chan"}
+  if(t==="wezly"&&openThread)chatTarget=openThread;
+  setChatPlaceholder();
+  showChatbar(t==="czat"||(t==="wezly"&&openThread));
+  document.body.dataset.tab=t;
+  if(t==="czat")pustyKanal();
+  if(t==="eter")rysujEter()}
+function bindTab(key){
+  $("t-"+key).onclick=function(){
+    if(key==="wezly")closeThread();
+    document.body.className="";
+    show(key)}}
+for(var tabKey in tabs)bindTab(tabKey);
+function nodeRow(pfx){
+  var n=nodes[pfx];
+  var path=isDirect(n)?tr("path_direct"):(trasaNieznana(n)?tr("path_nieznana"):hops(n.path));
+  return '<button class="row'+(n.unread?" unread":"")+'" data-p="'+pfx+'">'
+    +'<span class="dotu"></span><span><span class="nm">'+esc(n.name)+"</span>"
+    +'<span class="sub">'+ago(n.last)+" &middot; "+path+"</span></span>"
+    +'<span class="go2">'+GLYPH_GO+"</span></button>"}
+function drawAxis(){
+  /* listening axis: every heard cube as a dot; x = log(age), y = hops row */
+  var host=$("axis"),keys=Object.keys(nodes);
+  var h='<span class="axl">'+tr("ax_now")+'</span><span class="axr">'+tr("ax_old")+"</span>";
+  for(var i=0;i<keys.length;i++){
+    var n=nodes[keys[i]];
+    var age=n.last?Math.max(0,now()-n.last):WARM_S;
+    var fx=Math.min(1,Math.log(age/60+1)/AXIS_SPAN);
+    var row=isDirect(n)?0:(trasaNieznana(n)?1:Math.min(n.path,2));
+    var cls=isFresh(n)?"axd fresh":(age<WARM_S?"axd warm":"axd");
+    h+='<i class="'+cls+'" style="left:'+(6+fx*88).toFixed(1)+'%;top:'
+      +(12+row*16)+'px" title="'+esc(n.name)+'"></i>'}
+  host.innerHTML=h}
+function drawNodes(){
+  var host=$("nodes"),keys=Object.keys(nodes);
+  $("nodes-empty").style.display=keys.length?"none":"block";
+  $("axis").style.display=keys.length?"block":"none";
+  drawAxis();
+  keys.sort(function(a,b){return (nodes[b].last||0)-(nodes[a].last||0)});
+  var fresh=[],past=[];
+  for(var i=0;i<keys.length;i++)
+    (isFresh(nodes[keys[i]])?fresh:past).push(nodeRow(keys[i]));
+  var h="";
+  if(fresh.length)h+='<p class="ghdr">'+tr("g_now")+" ("+fresh.length+")</p>"+fresh.join("");
+  if(past.length)h+='<p class="ghdr">'+tr("g_past")+" ("+past.length+")</p>"+past.join("");
+  host.innerHTML=h;
+  var rows=host.querySelectorAll(".row");
+  for(var r=0;r<rows.length;r++)rows[r].onclick=openRowThread;
+}
+function openRowThread(){openDm(this.getAttribute("data-p"))}
+/* the WEZLY tab shows either the node list or one open thread, never both */
+function showNodeThread(open){
+  $("nodes-list").style.display=open?"none":"block";
+  $("node-thread").style.display=open?"block":"none"}
+function openDm(pfx){
+  openThread=pfx;chatTarget=pfx;
+  var n=nodes[pfx];n.unread=0;
+  var unread=false;
+  for(var p in nodes)if(nodes[p].unread){unread=true;break}
+  badge("t-wezly",unread);
+  showNodeThread(true);
+  document.body.className="dm";
+  $("tn").textContent=n.name;
+  $("tsig").textContent=tr("heard_ago").replace("%t",ago(n.last));
+  drawThread();setChatPlaceholder();
+  showChatbar(true)}
+/* leaving a DM: back to the node list, typing back to the channel */
+function closeThread(){
+  openThread=null;chatTarget="chan";
+  showNodeThread(false);
+  document.body.className=""}
+$("b-back").onclick=function(){closeThread();drawNodes();showChatbar(false)};
+/* one message header: mine carries the delivery state, theirs sender + SNR */
+function whoTag(html,cls){return '<span class="who'+(cls?" "+cls:"")+'">'+html+"</span>"}
+function stamp(k,t,cls){return whoTag(tr(k)+" &middot; "+t,cls)}
+function snrTag(snr){return snr==null?"":'<span class="snr">SNR '+fmtN(snr)+"</span>"}
+function msgMeta(mine,who,t,snr){
+  return mine?stamp("sent",t,"st-pend"):whoTag(esc(who)+" &middot; "+t)+snrTag(snr)}
+function drawThread(){
+  var n=nodes[openThread],h="";
+  for(var i=0;i<n.msgs.length;i++){
+    var m=n.msgs[i];
+    h+='<div class="msg'+(m.me?" me":"")+'"><p class="meta">'
+      +((m.me&&m.st)||msgMeta(m.me,n.name,m.t||"",m.snr))+"</p>"+esc(m.body)+"</div>"}
+  var f=$("dfeed");f.innerHTML=h;
+  if(f.lastChild)f.lastChild.scrollIntoView({block:"end"})}
+/* Ostatnia WYSLANA przez nas wiadomosc — pamietana wprost, a nie zgadywana
+   z tego, jaki watek jest akurat otwarty. */
+var ostatniaMoja=null;
+function markLastMine(st,kanal,ack){
+  if(kanal){ if(ostatniaMoja){ostatniaMoja.st=st;odswiezWidok()} return; }
+  if(chatTarget!=="chan"&&openThread){
+    var ms=nodes[openThread].msgs;
+    for(var i=ms.length-1;i>=0;i--)if(ms[i].me){ms[i].st=st;if(ack)ms[i].ack=ack;ostatniaMoja=ms[i];break}
+    drawThread()}
+  else if(ostatniaMoja){ostatniaMoja.st=st;if(ack)ostatniaMoja.ack=ack;odswiezWidok()}
+}
+function odswiezWidok(){ if(openThread)drawThread(); }
+/* Stempluje wiadomosc o TYM znaczniku, w dowolnym watku, i tylko raz. */
+function stempluj(ack){
+  if(!ack)return;
+  for(var q in nodes){var ms=nodes[q].msgs;
+    for(var i=ms.length-1;i>=0;i--)
+      if(ms[i].me&&ms[i].ack===ack){
+        if(ms[i].potw)return;
+        ms[i].potw=true;ms[i].st=stamp("confirmed",hhmm(),"st-ok");
+        if(openThread===q)drawThread();
+        return}}
+}
+/* Alarm na kanale NIE dostaje potwierdzen — mierzalne jest tylko to, ilu
+   ROZNYCH sasiadow odezwalo sie po jego wyslaniu. To liczymy i tak nazywamy. */
+var odezwani={};
+function odezwalSie(pfx){
+  if(!sosArmed||!pfx||odezwani[pfx])return;
+  odezwani[pfx]=1;
+  var n=Object.keys(odezwani).length;
+  $("v-ack").textContent=n;
+  powiedz(tr("k_ack")+" "+n);
+  var ring=document.querySelector('.hop[data-h="'+Math.min(n,HOP_RINGS)+'"]');
+  if(ring)ring.className="hop ack";
+}
+function addMsg(feedId,who,body,snr,me,alarm){
+  if(feedId==="feed")czyscPustke();
+  if(!me)eterZdarzenie();
+  var d=document.createElement("div");
+  d.className="msg"+(me?" me":"")+(alarm?" alarm":"");
+  d.innerHTML='<p class="meta">'+msgMeta(me,who,hhmm(),snr)+"</p>"+esc(body);
+  $(feedId).appendChild(d);
+  d.scrollIntoView({block:"end"})}
+/* Cudzyslowy MUSZA byc kodowane: esc() trafia takze do ATRYBUTU (title= na
+   kropce radaru), a nazwa wezla to 32 bajty dowolnej tresci przychodzace
+   Z POWIETRZA. Bez tego ktos w zasiegu radia nazywa swoj wezel tak, by wyjsc
+   z atrybutu i dopisac obsluge zdarzenia — i panel ratunkowy wykonuje cudzy
+   kod albo pokazuje cudza tresc. */
+var ESC={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
+function esc(s){return s.replace(/[&<>"']/g,function(c){return ESC[c]})}
+$("cs").onclick=function(){
+  var el=$("ci"),v=el.value.trim();
+  if(!v||!linked)return;
+  /* Straznik, nie podpowiedz: powyzej limitu mostek wyrzuca ramke po cichu,
+     wiec lepiej nie wyslac i powiedziec, niz udac, ze poszlo. */
+  if(bajtow(v)>limitBajtow()){odswiezLicznik();el.focus();return;}
+  if(chatTarget==="chan"){sendChan(v);addMsg("feed",selfName,v,null,true,false)}
+  else{sendDm(chatTarget,v);
+    nodes[chatTarget].msgs.push({me:true,body:v,t:hhmm()});drawThread()}
+  el.value="";odswiezLicznik()};
+$("ci").oninput=odswiezLicznik;
+$("ci").onkeydown=function(e){
+  if(e.key==="Enter"&&!$("cs").disabled)$("cs").onclick()};
+$("b-sync").onclick=function(){
+  if(!linked)return;
+  var ax=$("axis");
+  if(ax.style.display!=="none"){
+    ax.insertAdjacentHTML("beforeend",'<span class="sweepline"></span>');
+    ax.className="axis frame sweep";
+    setTimeout(function(){ax.className="axis frame";
+      var sl=ax.querySelector(".sweepline");if(sl)sl.parentNode.removeChild(sl)},SWEEP_MS);
+  }
+  ws.send(u8([CMD.GET_CONTACTS]))};
+function flashLabel(btn,text,key,then){
+  btn.textContent=text;
+  setTimeout(function(){btn.textContent=tr(key);if(then)then()},SAVED_FLASH_MS)}
+$("b-name").onclick=function(){
+  var btn=this,v=$("f-name").value.trim();
+  if(!v||!linked)return;
+  sendName(v);selfName=v;
+  $("v-name").textContent=v;
+  flashLabel(btn,tr("saved"),"b_save")};
+$("b-adv").onclick=function(){
+  /* Przycisk bez odzewu przy REALNEJ emisji: czlowiek naciskal piec razy
+     i piec razy zajmowal eter. Sasiedni ZAPISZ miga „zapisano", wiec kontrast
+     byl wyrazny. */
+  if(!linked){flashLabel(this,tr("brak_lacza"),"b_adv");return}
+  ws.send(u8([CMD.ADVERT,1]));
+  flashLabel(this,tr("wyslano"),"b_adv");
+  powiedz(tr("wyslano"))};
+function ustawMotyw(v){
+  document.documentElement.setAttribute("data-theme",v);
+  $("f-theme").value=v;
+  try{localStorage.setItem(MOTYW_KEY,v)}catch(e){}}
+function ustawJezyk(v){
+  lang=v;$("f-lang").value=v;applyLang();
+  try{localStorage.setItem(JEZYK_KEY,v)}catch(e){}}
+$("f-theme").onchange=function(){ustawMotyw(this.value)};
+$("f-lang").onchange=function(){ustawJezyk(this.value)};
+/* Przy pierwszym otwarciu: zapamietany wybor, a gdy go nie ma — jezyk telefonu
+   i motyw systemu. Kostke otwiera sie w kryzysie, a nie po to, zeby ja ustawiac. */
+(function(){
+  var m=null,j=null;
+  try{m=localStorage.getItem(MOTYW_KEY);j=localStorage.getItem(JEZYK_KEY)}catch(e){}
+  if(!m&&window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches)m="light";
+  if(m)ustawMotyw(m);
+  if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
+  if(j!==lang)ustawJezyk(j);
+})();
+$("ver").textContent="Biper panel v0.6 / K5";
+/* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
+   UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
+   przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja
+   zostaje tam, gdzie czlowiek szuka jej swiadomie. */
+setInterval(function(){if(!openThread)drawNodes()},NODES_TICK_MS);
+/* ===== backup / restore (owner: via the panel, the installer stays simple).
+   The backup is the raw CONTACT frames from the last sync — restoring just
+   replays each one as CMD_ADD_UPDATE_CONTACT (same byte layout). ===== */
+function saveBackup(){
+  try{
+    var c={};
+    for(var p in nodes)if(nodes[p].raw)c[p]=nodes[p].raw;
+    if(!Object.keys(c).length)return;
+    localStorage.setItem(BAK_KEY,JSON.stringify({name:selfName,ts:now(),contacts:c}));
+    drawBackup();
+  }catch(e){}}
+function loadBackup(){
+  try{var v=localStorage.getItem(BAK_KEY);return v?JSON.parse(v):null}
+  catch(e){return null}}
+function drawBackup(){
+  var b=loadBackup(),el=$("bak-info");
+  if(!b){el.textContent=tr("bak_none");$("b-restore").disabled=true;return}
+  $("b-restore").disabled=!linked;
+  el.textContent=tr("bak_info").replace("%n",Object.keys(b.contacts).length)
+    .replace("%t",ago(b.ts))+(b.name?" · "+b.name:"")}
+$("b-restore").onclick=function(){
+  var b=loadBackup();
+  if(!b||!linked)return;
+  var frames=[];
+  for(var p in b.contacts)frames.push(b.contacts[p]);
+  var i=0,btn=this;
+  function step(){
+    if(i<frames.length){
+      var f=hexBytes(frames[i++]);
+      f[0]=CMD.ADD_CONTACT;
+      ws.send(f);
+      setTimeout(step,RESTORE_GAP_MS);
+    }else{
+      if(b.name)sendName(b.name);
+      flashLabel(btn,tr("restored").replace("%n",frames.length),"b_restore",
+        function(){ws.send(u8([CMD.GET_CONTACTS]))});
+    }}
+  step()};
+/* ===== mock cube (dev/demo: ?mock=1) ===== */
+window.MOCK=/[?&]mock=1/.test(location.search);
+/* W podgladzie nie ma serwera kostki, wiec /stan odpowiadaloby 404 i karta
+   stanu — jedyne miejsce, ktore mowi o urzadzeniu — bylaby pusta akurat tam,
+   gdzie ja ogladamy. Podstawiamy odpowiedz o tym samym ksztalcie co prawdziwa. */
+if(window.MOCK){
+  var _fetch=window.fetch;
+  window.fetch=function(u){
+    if(String(u).indexOf("/stan")===0) return Promise.resolve({ok:true,json:function(){
+      return Promise.resolve({tryb:"SIEC",slyszy:1,praca_s:4530,hotspot_s:412,
+        okno_s:600,goscie:1,ssid:"Biper-15FE",pamiec:41200});
+    }});
+    return _fetch.apply(window,arguments);
+  };
+}
+function FakeWS(){var s=this;s.binaryType="";
+  setTimeout(function(){s.readyState=1;s.onopen&&s.onopen()},250);
+  function reply(arr,ms){setTimeout(function(){
+    s.onmessage&&s.onmessage({data:u8(arr).buffer})},ms||120)}
+  function push32(a,v){a.push(v&255,(v>>8)&255,(v>>16)&255,(v>>24)&255)}
+  function pushText(a,text){var b=TENC.encode(text);for(var i=0;i<b.length;i++)a.push(b[i])}
+  function contact(pfx,nm,agoS,path){
+    var f=[RESP.CONTACT];
+    for(var i=0;i<32;i++)f.push(i<6?pfx[i]:((i*13)&255));
+    f.push(1,0,path);
+    for(var p=0;p<64;p++)f.push(0);
+    var nb=TENC.encode(nm);for(var c=0;c<32;c++)f.push(c<nb.length?nb[c]:0);
+    push32(f,now()-agoS);
+    f=f.concat([0,0,0,0, 0,0,0,0, 0,0,0,0]);
+    return f}
+  var zosia=[0xaa,1,2,3,4,5],marek=[0xbb,9,8,7,6,5];
+  s.send=function(data){var b=new Uint8Array(data),c=b[0];
+    if(c===CMD.APP_START){
+      var name="Biper-15FE",f=[RESP.SELF_INFO,1,22,22];
+      for(var i=0;i<32;i++)f.push(i*7&255);
+      f=f.concat([0,0,0,0, 0,0,0,0, 1,0,0,0]);
+      push32(f,869618000); /* frequency, read back at offset 48 */
+      push32(f,62500);     /* bandwidth */
+      f.push(8,8);         /* SF at 56, CR at 57 */
+      pushText(f,name);    /* name runs from offset 58 to the end */
+      reply(f)}
+    else if(c===CMD.GET_CONTACTS){
+      reply([RESP.C_START,2]);
+      reply(contact(zosia,"Zosia",180,PATH_DIRECT),200);
+      reply(contact(marek,"Marek",4100,2),280);
+      reply([RESP.C_END],360)}
+    else if(c===CMD.GET_BATT){/* 0 mV: C6L nie ma ogniwa ani pomiaru — atrapa
+      ma mowic to samo, co plytka, inaczej makiety pokazuja nieistniejacy
+      pomiar */reply([RESP.BATT,0,0,0,0,0,0,0,0,0,0])}
+    else if(c===CMD.SEND_CHAN){reply([RESP.OK]);
+      /* zadnego CONFIRMED: kanal publiczny go nie dostaje */
+      var r=[RESP.CHAN_V3,26,0,0,0,2,0,0,0,0,0]; /* text from offset 11 */
+      pushText(r,"Zosia: Przyjęłam, jestem 2 km na północ.");
+      reply(r,3300)}
+    else if(c===CMD.SEND_TXT){reply([RESP.SENT,0,1,0,0,0,1,0,0,0]);
+      reply([PUSH.CONFIRMED],1500);
+      var d=[RESP.DM_V3,30,0,0].concat(zosia).concat([0xFF,0]); /* prefix at 4 */
+      push32(d,now());
+      pushText(d,"Jasne, czekam przy moscie."); /* text from offset 16 */
+      reply(d,2600)}
+    else if(c===CMD.ADVERT){reply([RESP.OK]);
+      reply([PUSH.ADVERT].concat(zosia).concat(new Array(26).fill(0)),900)}
+    else if(c===CMD.ADD_CONTACT){reply([RESP.OK])}
+    else if(c===CMD.SET_NAME){reply([RESP.OK])}
+    else if(c===CMD.SYNC){reply([RESP.NO_MORE])}
+    else if(c===CMD.GET_TIME){reply([RESP.CURR_TIME,0,0,0,0])}};
+  s.close=function(){}}
+/* ===== boot ===== */
+applyLang();show("pomoc");drawBackup();connect();
+</script>
+</body></html>

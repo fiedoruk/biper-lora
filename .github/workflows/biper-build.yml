@@ -1,0 +1,74 @@
+# The one thing this fork must prove on every change: that it still builds.
+# Upstream's `pr-build-check` matrix is a fixed list that does not contain our
+# environments, and the release generator looks for names ending in
+# `_companion_radio_ble/_usb` — ours are named differently. Without this
+# workflow, "both environments SUCCESS" in a commit message is a measurement
+# taken on one laptop.
+name: Biper build
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'src/helpers/biper/**'
+      - 'variants/biper_ap/**'
+      - 'variants/m5stack_unit_c6l/**'
+      - 'biper/app/**'
+      - 'fonts/**'
+      - 'examples/companion_radio/main.cpp'
+      - '.github/workflows/biper-build.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: PlatformIO
+        run: pip install --upgrade platformio
+
+      # Both asset headers are GENERATED and the build does not refresh them.
+      # Edit `biper-app.html` or a font file, forget the generator, and the
+      # firmware compiles the previous payload without saying a word. Here it
+      # says it. Note gen-asset.py pins the gzip OS byte, so the output is
+      # identical on Linux and macOS.
+      - name: Panel asset is up to date
+        run: |
+          python3 biper/app/gen-asset.py
+          git diff --exit-code -- src/helpers/biper/BiperAppAsset.h \
+            || { echo "::error::BiperAppAsset.h is stale — run python3 biper/app/gen-asset.py"; exit 1; }
+
+      # The font header carries ~97 kB of OFL-1.1 typefaces that the cube
+      # redistributes over /f/*.woff2. A drift between fonts/*.woff2 and the
+      # header is not only a build problem: the licence notice would then
+      # describe bytes the device does not actually serve.
+      - name: Font asset is up to date
+        run: |
+          python3 biper/app/gen-fonts.py
+          git diff --exit-code -- src/helpers/biper/BiperFontAsset.h \
+            || { echo "::error::BiperFontAsset.h is stale — run python3 biper/app/gen-fonts.py"; exit 1; }
+
+      - name: Build both environments
+        run: pio run -e Biper_AP_C6L_spike -e Biper_AP_C6L_wifi_only
+
+  readme-facts:
+    # The README states numbers and tells the reader to verify them. This job is
+    # that reader: it re-computes the diffstat against the MeshCore base tag and
+    # the panel asset size, and fails when the README drifts from reality.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: README numbers match reality
+        run: |
+          git remote add upstream https://github.com/meshcore-dev/MeshCore
+          git fetch upstream --tags --quiet
+          real="$(git diff --shortstat companion-v1.17.1 HEAD | sed 's/^ *//')"
+          grep -qF "$real" .github/README.md || { echo "README diffstat drift — reality: $real"; exit 1; }
+          len="$(grep -oE 'BIPER_APP_HTML_LEN = [0-9]+' src/helpers/biper/BiperAppAsset.h | grep -oE '[0-9]+')"
+          grep -qF "($len bytes)" .github/README.md || { echo "README panel size drift — reality: $len bytes"; exit 1; }
