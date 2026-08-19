@@ -9,6 +9,26 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8 — 2026-08-19 — the iPhone reaches the panel, the screen admits who it hears
+
+- **iOS no longer answers "bad host" on the way to the panel.** The cube served
+  its welcome page directly to Apple's captive probe, so the sign-in sheet kept
+  browsing as `captive.apple.com` — and the panel's own origin guard then
+  (correctly) refused every click. The probe now answers with the same redirect
+  the Android and Windows probes get, the sheet lands on `http://192.168.4.1/`,
+  and the guard, the links and the WebSocket all agree (owner-reported on an
+  iPhone, 19 Aug).
+- **SLYSZE counts a node the first time it is heard.** A newly discovered
+  neighbour arrives as a different push code (`0x8A`) than a re-advert
+  (`0x80`); only the latter was counted, so two factory-fresh cubes could
+  discover each other while both screens still said `SLYSZE 0`.
+- **The screen stays informed after the hotspot window closes.** An earlier
+  audit fix disabled the whole mesh bridge together with the Wi-Fi window;
+  from then on adverts went uncounted and a button wipe was silently dropped.
+  The bridge now listens for the device's whole life and the window only
+  opens and closes the socket. Incoming messages were never at risk — the
+  offline queue is unconditional and pushes are only a doorbell.
+
 ## v0.7 — 2026-08-19 — honest wipe feedback, English internals
 
 - **The wipe no longer flickers back to normal pages.** From the moment the

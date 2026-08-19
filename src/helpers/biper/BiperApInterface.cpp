@@ -9,7 +9,7 @@
 #include <esp_http_server.h>
 
 // Companion protocol codes — verified in examples/companion_radio/MyMesh.cpp
-// (lines 7, 8, 77, 114, 115). Here they are only READ; we interpret nothing
+// (lines 7, 8, 77, 114, 115, 122). Here they are only READ; we interpret nothing
 // beyond the first byte, so an upstream change will at worst switch off the
 // state preview, never break the transport.
 static const uint8_t CMD_SEND_DM        = 2;     // CMD_SEND_TXT_MSG
@@ -18,6 +18,7 @@ static const uint8_t RESP_SENT          = 6;     // RESP_CODE_SENT
 static const uint8_t PUSH_CONFIRMED     = 0x82;  // PUSH_CODE_SEND_CONFIRMED
 static const uint8_t PUSH_MSG_WAITING   = 0x83;  // PUSH_CODE_MSG_WAITING
 static const uint8_t PUSH_ADVERT        = 0x80;  // PUSH_CODE_ADVERT: [0x80][pub_key]
+static const uint8_t PUSH_NEW_ADVERT    = 0x8A;  // PUSH_CODE_NEW_ADVERT: [0x8A][pub_key][...]
 
 // Who is audible. An advert carries a public key, so we count NODES, not
 // frames — one neighbour transmitting twelve times is still one neighbour.
@@ -121,7 +122,12 @@ bool BiperApInterface::isWriteBusy() const {
 size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   if (!_enabled || len == 0 || len > MAX_FRAME_SIZE) return 0;
   if (src[0] == PUSH_MSG_WAITING) biper_msg_flag = true;
-  else if (src[0] == PUSH_ADVERT && len >= 5) note_advert(&src[1]);
+  // Both advert pushes carry the public key at offset 1. A node heard for the
+  // FIRST time arrives as 0x8A, never 0x80 — counting only 0x80 meant the
+  // counter missed the exact moment two fresh cubes met: each discovered the
+  // other and both screens kept saying SLYSZE 0.
+  else if ((src[0] == PUSH_ADVERT || src[0] == PUSH_NEW_ADVERT) && len >= 5)
+    note_advert(&src[1]);
   // State for the cube's screen. The guard (is this a consequence of OUR
   // transmission, and does a confirmation exist at all for this kind of send)
   // sits in biper_face_set() — here we only report what we saw in the frame.

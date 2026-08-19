@@ -422,8 +422,13 @@ static bool biper_httpd_start() {
       {"/f/*", HTTP_GET, font_get, nullptr, false, false, nullptr},
       {"/generate_204", HTTP_GET, redirect_get, nullptr, false, false, nullptr},
       {"/gen_204", HTTP_GET, redirect_get, nullptr, false, false, nullptr},
-      // iOS probe: answer with the page itself, so its sign-in sheet opens on it.
-      {"/hotspot-detect.html", HTTP_GET, page_get, nullptr, false, false, nullptr},
+      // iOS probe: REDIRECT, never the page itself. Serving the page directly
+      // kept the sign-in sheet on http://captive.apple.com, so every relative
+      // link (/app) carried Host: captive.apple.com — and the origin guard
+      // answered "bad host" to the very person the page was inviting in
+      // (measured on an iPhone, 19.08). After the 302 the sheet lands on
+      // http://192.168.4.1/ and the guard and the links agree.
+      {"/hotspot-detect.html", HTTP_GET, redirect_get, nullptr, false, false, nullptr},
       {"/ncsi.txt", HTTP_GET, redirect_get, nullptr, false, false, nullptr},
       {"/connecttest.txt", HTTP_GET, redirect_get, nullptr, false, false, nullptr},
       {"/*", HTTP_GET, page_get, nullptr, false, false, nullptr},  // catch-all
@@ -475,7 +480,6 @@ static void biper_ap_window() {
   IPAddress ip = WiFi.softAPIP();
   biper_dns.start(53, "*", ip);
   const bool web_ok = biper_httpd_start();
-  biper_ap_interface()->enable();
 
   const uint32_t t_up = millis();
   biper_state.active = ap_ok && web_ok;
@@ -540,11 +544,13 @@ static void biper_ap_window() {
   // A closed window has no reason to keep the password in RAM for the rest of
   // the device's life; the next window draws a fresh one anyway.
   memset(biper_state.pass, 0, sizeof(biper_state.pass));
-  // C3: without this `_enabled` stayed `true` forever after the window closed,
-  // so the layer above saw the interface as connected while Wi-Fi was off. The
-  // order matters: first we stop accepting frames, only then does the server
-  // that had a way to send them disappear.
-  biper_ap_interface()->disable();
+  // The bridge STAYS enabled — only the socket dies with the window. The C3
+  // audit fix put a disable() here and that was a regression: after the first
+  // window closed the mesh saw no connected client, stopped pushing, and the
+  // OLED went blind — SLYSZY froze and a button wipe was silently dropped,
+  // the exact two failures the boot-time enable() exists to prevent. Incoming
+  // messages are safe either way (the offline queue is unconditional; pushes
+  // are only a doorbell), so an always-listening bridge costs nothing.
   biper_ap_interface()->resetQueues();
   biper_httpd_stop();
   biper_dns.stop();
