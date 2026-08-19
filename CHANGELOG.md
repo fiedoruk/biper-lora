@@ -9,6 +9,20 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.13 — 2026-08-20 — the pair completes both ways, and cubes carry their word as a name
+
+- **The advert-reply escapes the shared rate limit.** The boot advert almost
+  always fired within the last ten minutes, so the shared limit silently
+  suppressed the one transmission that completes the pair — observed as
+  "cube A sees B, B does not see A". The reply now has its own one-minute
+  gap; storms stay impossible.
+- **A factory-named cube introduces itself by its word.** Contact lists full
+  of "047DCB4B" read like a debugger, not a family tool. When the node name
+  is still factory (empty or eight hex digits), it now defaults to the
+  cube's word — the same one the Wi-Fi carries (KIER, ELF…) — so adverts,
+  KONTAKTY and messages all speak one name. A name typed in USTAW always
+  wins and is never touched.
+
 ## v0.8.12 — 2026-08-19 — a contact across any distance
 
 - **SETTINGS gains "contact at a distance".** SHOW MY CODE exports the

@@ -51,6 +51,7 @@ static const uint32_t BIPER_ADVERT_BOOT_MS = 45000;
 // honest. Both respect one shared rate limit.
 static const uint32_t BIPER_ADVERT_REPLY_DELAY_MS = 3000;
 static const uint32_t BIPER_ADVERT_MIN_GAP_MS = 10UL * 60UL * 1000UL;
+static const uint32_t BIPER_ADVERT_REPLY_GAP_MS = 60UL * 1000UL;
 static const uint32_t BIPER_ADVERT_PERIOD_MS = 60UL * 60UL * 1000UL;
 static volatile uint32_t biper_advert_reply_at = 0;  // 0 = nothing pending
 static uint32_t biper_advert_last_ms = 0;
@@ -722,8 +723,13 @@ static void biper_ap_task(void*) {
     // passes, unless we have advertised recently anyway.
     if (biper_advert_reply_at != 0 && t_now >= biper_advert_reply_at) {
       biper_advert_reply_at = 0;
+      // The reply gets its OWN short gap, not the shared ten minutes: the
+      // boot advert almost always fired within the last ten minutes, so the
+      // shared limit silently suppressed the one transmission that completes
+      // the pair — observed as "cube A sees B, B does not see A" on the
+      // owner's pair (morning after 0.8.10). One minute still prevents storms.
       if (biper_forwarding() && (biper_advert_last_ms == 0 ||
-          t_now - biper_advert_last_ms >= BIPER_ADVERT_MIN_GAP_MS)) {
+          t_now - biper_advert_last_ms >= BIPER_ADVERT_REPLY_GAP_MS)) {
         send_advert("reply");
       }
     }
@@ -842,6 +848,29 @@ void biper_ap_setup(NodePrefs* prefs, MultiSerialInterface* manager) {
   }
 
   biper_ssid_refresh();
+  // Owner request (20.08, morning): the factory node name is the public key
+  // in hex — KONTAKTY full of "047DCB4B" reads like a debugger, not a family
+  // tool. When the name is still factory (empty or exactly 8 hex digits),
+  // default it to the cube's WORD — the same one the Wi-Fi carries — so
+  // adverts, contact lists and messages all speak one name. A name typed by
+  // the person in USTAW is never touched. RAM-only on purpose: recomputed
+  // each boot, follows a wipe correctly, and a saved user name wins forever.
+  if (prefs != nullptr) {
+    const char* slowo = biper_state.ssid + 6;  // za "Biper-"
+    const char* n = prefs->node_name;
+    size_t nl = strlen(n);
+    bool fabryczna = (nl == 0);
+    if (!fabryczna && nl == 8) {
+      fabryczna = true;
+      for (size_t i = 0; i < nl; i++)
+        if (!((n[i] >= '0' && n[i] <= '9') || (n[i] >= 'A' && n[i] <= 'F'))) { fabryczna = false; break; }
+    }
+    if (fabryczna && slowo[0]) {
+      snprintf(prefs->node_name, sizeof(prefs->node_name), "%s", slowo);
+      Serial.printf("[BIPER] node name defaulted to word\n");
+    }
+  }
+
 #ifdef BIPER_SCREEN
   biper_screen_start();
 #endif
