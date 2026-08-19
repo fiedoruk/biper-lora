@@ -463,7 +463,7 @@ static void biper_ap_window() {
   WiFi.mode(WIFI_AP);
 #ifdef BIPER_AP_OPEN
   // Escape hatch: an open "beacon" network (pre-v0.7 behavior).
-  const bool ap_ok = WiFi.softAP(biper_state.ssid, nullptr, 1, 0, 1);
+  const bool ap_ok = WiFi.softAP(biper_state.ssid, nullptr, 1, 0, 4);
   biper_state.pass[0] = 0;
 #else
   // Owner decision (19.08, revising his own 18.08 call): the password is FIXED
@@ -474,7 +474,12 @@ static void biper_ap_window() {
   // characters off a tiny screen (owner's two-cube test, 19.08). Physical
   // control remains the gate — only the button opens the window — and a wipe
   // erases the password with the rest of the cube.
-  // max_connection=1: the cube is ONE person's terminal.
+  // max_connection=4, NOT 1. "One person's terminal" is enforced where it
+  // means something — the WS bridge refuses a second panel client. A single
+  // AP slot enforced it in the worst possible place instead: the owner's Mac
+  // auto-joined with a remembered password, silently took the only slot, and
+  // the phone typing the CORRECT password from the OLED was refused with what
+  // Apple renders as a wrong-password error (owner's pair test, 19.08).
   // Alphabet without 0/O/1/I/L: the password is copied off a 64x48 screen, so
   // look-alike glyphs would cost more than the two bits they bring.
   // Eight characters from a 31-symbol alphabet = 39.6 bits. That figure is
@@ -488,7 +493,7 @@ static void biper_ap_window() {
     biper_nvs.putString(NVS_PASS, biper_state.pass);
     Serial.printf("[BIPER_AP] pass drawn once, stored\n");
   }
-  const bool ap_ok = WiFi.softAP(biper_state.ssid, biper_state.pass, 1, 0, 1);
+  const bool ap_ok = WiFi.softAP(biper_state.ssid, biper_state.pass, 1, 0, 4);
 #endif
   IPAddress ip = WiFi.softAPIP();
   biper_dns.start(53, "*", ip);

@@ -9,6 +9,16 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.4 — 2026-08-19 — four seats at the hotspot
+
+- **A remembered device can no longer lock the owner out.** The hotspot
+  allowed exactly one client, so a laptop auto-joining with a remembered
+  password silently took the only seat — and the phone typing the CORRECT
+  password off the OLED was refused with what Apple renders as a
+  wrong-password error (owner's pair test, 19 Aug). The access point now
+  seats four; "one person's terminal" stays enforced where it belongs, at
+  the panel bridge, which accepts a single client.
+
 ## v0.8.3 — 2026-08-19 — the hotspot stops fighting the person using it
 
 - **One password per cube, remembered by the phone.** The password used to
