@@ -39,6 +39,12 @@ static const uint32_t BIPER_AP_HEAP_LOG_MS = 5000;
 static const uint32_t BIPER_AP_POLL_MS = 5;
 // How often the idle state machine checks for a toggle request.
 static const uint32_t BIPER_AP_IDLE_POLL_MS = 50;
+// Boot advert (owner decision 19.08): a cube in SIEC mode announces itself
+// once, ~45 s after power-on — two fresh cubes see each other without anyone
+// opening the panel. The delay lets the mesh settle and keeps a cube powered
+// on before its antenna is screwed on from transmitting immediately. SAM
+// stays silent: whoever chose not to relay also chose not to be announced.
+static const uint32_t BIPER_ADVERT_BOOT_MS = 45000;
 // Probe handlers cannot read biper_ap_window()'s local softAPIP();
 // 192.168.4.1 is the ESP32 SoftAP default.
 static const char BIPER_AP_PORTAL_URL[] = "http://192.168.4.1/";
@@ -587,7 +593,19 @@ static void biper_ap_window() {
 
 static void biper_ap_task(void*) {
   vTaskDelay(pdMS_TO_TICKS(BIPER_AP_BOOT_DELAY_MS));
+  bool advert_done = false;
   for (;;) {
+    if (!advert_done && millis() >= BIPER_ADVERT_BOOT_MS) {
+      advert_done = true;
+      if (biper_forwarding()) {
+        // Same frame the panel's ROZGLOS button sends: flood self-advert.
+        static const uint8_t ADVERT[] = {7, 1};  // CMD_SEND_SELF_ADVERT
+        biper_ap_interface()->onClientFrame(ADVERT, sizeof(ADVERT));
+        Serial.printf("[BIPER] boot advert sent (SIEC)\n");
+      } else {
+        Serial.printf("[BIPER] boot advert skipped (SAM)\n");
+      }
+    }
     if (biper_toggle_req) {
       biper_toggle_req = false;
       biper_ap_window();

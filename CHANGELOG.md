@@ -9,6 +9,16 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.5 — 2026-08-19 — a SIEC cube introduces itself on the air
+
+- **Two fresh cubes now see each other without a phone.** A cube in SIEC
+  mode sends one self-advert about 45 seconds after power-on — the same
+  frame the panel's ROZGLOS button sends. The delay lets the mesh settle
+  and keeps a cube powered on before its antenna is attached from
+  transmitting immediately. SAM stays silent: whoever chose not to relay
+  also chose not to be announced, and ROZGLOS remains the manual path for
+  both modes.
+
 ## v0.8.4 — 2026-08-19 — four seats at the hotspot
 
 - **A remembered device can no longer lock the owner out.** The hotspot
