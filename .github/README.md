@@ -148,7 +148,7 @@ stock app slot.
 This is the part a reviewer should check first.
 
 ```
-49 files changed, 12300 insertions(+), 359 deletions(-)   # vs MeshCore companion-v1.17.1, as of 19 Aug 2026
+50 files changed, 12342 insertions(+), 360 deletions(-)   # vs MeshCore companion-v1.17.1, as of 19 Aug 2026
 ```
 
 Of those lines  about 7 000 sit in two generated headers — the gzipped panel

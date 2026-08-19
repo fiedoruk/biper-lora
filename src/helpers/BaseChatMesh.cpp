@@ -146,7 +146,17 @@ void BaseChatMesh::onAdvertRecv(mesh::Packet* packet, const mesh::Identity& id, 
     packet->header = save;
   }
 
-  if (from && from->type == ADV_TYPE_NONE) {   // already in contacts, but from a temporary ANON_REQ ?
+  if (from && ((from - contacts) < MAX_ANON_CONTACTS || from->type == ADV_TYPE_NONE)) {
+    // A record parked in the transient/anon zone is INVISIBLE to the app's
+    // contact enumeration (the iterator starts past that zone), yet lookups
+    // keep finding it — so a real neighbour could stay "known" forever while
+    // the contact list showed nothing. The old check caught only records that
+    // still carried ADV_TYPE_NONE; an anon record whose type had been
+    // overwritten by an earlier advert update slipped through and became a
+    // permanent black hole (bench-proven on the owner's pair, 19 Aug 2026:
+    // adverts updated the record on every receive, KONTAKTY stayed empty on
+    // both cubes). Clear the transient slot and let the normal add flow
+    // allocate a REAL slot below.
     memset(from, 0, sizeof(*from));  // clear the anon/temp slot
     from = NULL;  // do normal 'add' flow
   }

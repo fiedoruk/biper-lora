@@ -9,6 +9,23 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.11 — 2026-08-19 — the pair finally sees each other: one class, one memory layout
+
+- **The contact list works.** The RAM diet of 18 Aug used `-U MAX_CONTACTS`
+  before its own `-D` — and PlatformIO moves every `-U` to the END of the
+  compiler command, erasing BOTH defines. Each source file then fell back to
+  its own header default: `MyMesh.h` said 100 contacts, `BaseChatMesh.h`
+  said 32. One class, two array sizes, two different addresses for every
+  field behind that array — the radio path stored contacts where the
+  panel's enumeration never looked. Proven with address probes on the
+  owner's pair; fixed by overriding with a later `-D` alone. Bench-verified
+  end to end afterwards: both contact lists filled, direct messages
+  delivered and acknowledged both ways.
+- **A neighbour parked in the transient zone is promoted.** A record created
+  by the anonymous path (e.g. an SOS) sits in slots the contact list never
+  shows; an advert used to only refresh it there, forever. Hearing an advert
+  for such a record now clears the transient slot and adds a real contact.
+
 ## v0.8.10 — 2026-08-19 — discovery no longer hinges on one 45-second window
 
 - **A cube answers a new neighbour with its own advert.** Discovery used to
