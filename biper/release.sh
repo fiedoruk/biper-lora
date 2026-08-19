@@ -34,6 +34,10 @@ VERSION="$(tr -d '[:space:]' < "$ROOT/biper/VERSION")"
 # v0.8 shipped printing "v0.7" because the banner was a forgotten literal.
 BANNER="$(sed -n 's/.*BIPER_LAYER_VERSION "\(.*\)".*/\1/p' "$ROOT/src/helpers/biper/BiperVersion.h")"
 [ "$BANNER" = "$VERSION" ] || { echo "error: BiperVersion.h says '$BANNER', biper/VERSION says '$VERSION' — align them and rebuild"; exit 1; }
+# The header gate above compares FILES; v0.8.13 shipped a binary whose banner
+# still said v0.8.12, because the bump landed after the last build. Check the
+# BINARY too: the compiled banner string must carry the released version.
+grep -q "layer v${VERSION}," "$B/firmware.bin" || { echo "error: firmware.bin banner is not v${VERSION} — rebuild first (pio run -e $ENV)"; exit 1; }
 COMMIT_SHA="$(git -C "$ROOT" rev-parse --short=7 HEAD)"
 OUT="$ROOT/biper/releases/Biper_Unit_C6L-v${VERSION}-${COMMIT_SHA}-merged.bin"
 mkdir -p "$(dirname "$OUT")"
