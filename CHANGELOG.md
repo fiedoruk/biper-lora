@@ -9,6 +9,17 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.2 — 2026-08-19 — the hotspot introduces itself with a word
+
+- **`Biper-SOWA` instead of `Biper-3F2A`.** Owner decision: hex digits are
+  easy to confuse between two cubes and impossible to say out loud. The cube
+  now draws a 3–4-letter Polish noun (~150-word list, ASCII only, sized so
+  the full name fits the 64-px OLED) from the same all-bits fold of the efuse
+  identifier that v0.8.1 introduced. With ~150 words two cubes of one batch
+  can still draw the same name (<1%); if that ever bites, the fix is a second
+  word, not digits. v0.8.1 fixed the collision but never reached the public
+  installer — this release supersedes it.
+
 ## v0.8.1 — 2026-08-19 — every cube gets its own hotspot name
 
 - **Two cubes no longer announce the same Wi-Fi network.** The hotspot name

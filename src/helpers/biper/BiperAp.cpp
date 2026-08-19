@@ -672,16 +672,43 @@ void biper_ap_setup(NodePrefs* prefs, MultiSerialInterface* manager) {
     biper_ap_interface()->enable();
   }
 
-  // Fold ALL the efuse bits into the name. The old code printed bits 32-47 —
-  // and on the C6 the efuse identifier comes back as an EUI-64, whose constant
-  // FF:FE filler plus a batch octet sit exactly in that slice. Result: every
-  // cube of the owner's pair announced the SAME hotspot, Biper-15FE (the FE is
-  // literally the filler; measured on both units, 19 Aug). An XOR fold lets
-  // any differing octet reach the name, wherever the unique bytes live.
+  // The cube introduces itself with a WORD, not hex (owner decision, 19 Aug:
+  // digits are easy to confuse between two cubes and impossible to say out
+  // loud — "join Biper-SOWA" works, "Biper-3F2A" does not). The word comes
+  // from folding ALL the efuse bits: the old code printed bits 32-47, and on
+  // the C6 the efuse identifier is an EUI-64 whose constant FF:FE filler plus
+  // a batch octet sit exactly in that slice — the owner's whole pair announced
+  // the same Biper-15FE hotspot. An XOR fold lets any differing octet reach
+  // the name, wherever the unique bytes live.
+  //
+  // Words are 3-4 letters for a reason: 64 px of OLED show ten 6-px glyphs,
+  // so "Biper-" plus four letters is the longest SSID the screen can carry
+  // without touching the drawing code (and its pixel-parity gate). With ~150
+  // words two cubes of one batch can still draw the same name (<1%); if that
+  // ever bites, the fix is a second word, not digits.
+  static const char* const NAME_WORDS[] = {
+      "SOWA", "WILK", "RYBA", "FOKA", "KRAB", "KRET", "KURA", "KOZA", "PUMA",
+      "LAMA", "ORKA", "KIWI", "DROP", "IBIS", "MEWA", "KRUK", "MYSZ", "LIS",
+      "KOT",  "OSA",  "RAK",  "SUM",  "EMU",  "LEW",  "PAW",  "BYK",  "TUR",
+      "KUC",  "GIL",  "KOS",  "KUNA", "MORS", "KARP", "KRYL", "ARA",  "GNU",
+      "REN",  "SZOP", "DODO", "MOA",  "KEA",  "LIN",  "SOLA", "BOA",  "LORI",
+      "NEON", "KLON", "LIPA", "BUK",  "GRAB", "CIS",  "BEZ",  "MAK",  "LEN",
+      "IRYS", "FIGA", "CEDR", "MECH", "KORA", "OWOC", "TORF", "KRA",  "SAD",
+      "WOSK", "FALA", "LAWA", "RAFA", "JAR",  "WODA", "ROSA", "GRAD", "LUNA",
+      "MARS", "KLIF", "STEP", "LAS",  "GAJ",  "POLE", "STAW", "ATOL", "URAN",
+      "DOM",  "DACH", "OKNO", "MOST", "STER", "LINA", "KNOT", "FLET", "KOSZ",
+      "KULA", "NORA", "MAPA", "LUPA", "GAMA", "NUTA", "RYTM", "ECHO", "ROMB",
+      "AGAT", "OPAL", "MIKA", "CYNA", "CYNK", "SMOK", "GNOM", "ELF",  "GRYF",
+      "PORT", "MOLO", "FORT", "PROM", "TAMA", "BOJA", "GROT", "TRAP", "KIL",
+      "RUFA", "REJA", "SER",  "JUTA", "SAGA", "RUNO", "HAK",  "PION", "KLIN",
+      "DRUT", "NIT",  "MISA", "SITO", "TACA", "BUT",  "PAS",  "SZAL", "TOGA",
+      "DAR",  "CZAR", "SEN",  "TON",  "KOC",  "KARO", "KIER", "PIK",  "GOL",
+      "KORT", "TOR",  "META", "RAMA", "PLED",
+  };
   const uint64_t mac = ESP.getEfuseMac();
-  const uint16_t ssid_id = (uint16_t)(mac ^ (mac >> 16) ^ (mac >> 32) ^ (mac >> 48));
-  snprintf(biper_state.ssid, sizeof(biper_state.ssid), "Biper-%04X",
-           (unsigned)ssid_id);
+  const uint16_t fold = (uint16_t)(mac ^ (mac >> 16) ^ (mac >> 32) ^ (mac >> 48));
+  snprintf(biper_state.ssid, sizeof(biper_state.ssid), "Biper-%s",
+           NAME_WORDS[fold % (sizeof(NAME_WORDS) / sizeof(NAME_WORDS[0]))]);
 #ifdef BIPER_SCREEN
   biper_screen_start();
 #endif
