@@ -420,10 +420,16 @@ static esp_err_t ws_handler(httpd_req_t* req) {
     }
     const int fd = httpd_req_to_sockfd(req);
     if (biper_ws_fd_get() >= 0 && biper_ws_fd_get() != fd) {
-      // One phone = one terminal: refuse a second client instead of letting
-      // the LRU purge silently evict the first one.
-      Serial.printf("[BIPER_WS] second client refused\n");
-      return ESP_FAIL;
+      // NEWEST client wins. Refusing the second one looked principled and
+      // bricked the panel in practice: a phone with a suspended tab leaves a
+      // half-dead socket behind, and with four AP seats that socket no longer
+      // dies with the Wi-Fi link — every next panel got refused while SLYSZY
+      // said the radio was fine (owner's two-phone test, 19.08 evening).
+      // Physical presence on the cube's Wi-Fi is the auth here; the person
+      // opening the panel NOW outranks a socket nobody is looking at.
+      Serial.printf("[BIPER_WS] taking over from fd=%d\n", biper_ws_fd_get());
+      httpd_sess_trigger_close(req->handle, biper_ws_fd_get());
+      biper_ws_session_close();
     }
     biper_ws_session_open(req->handle, fd);
     return ESP_OK;

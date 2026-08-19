@@ -9,6 +9,19 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.9 — 2026-08-19 — the panel link recovers by itself, the clock becomes real
+
+- **The newest phone takes over the panel.** The bridge used to refuse a
+  second client — principled on paper, and in practice a phone with a
+  suspended tab left a half-dead socket that bricked the panel for every
+  next phone, while SŁYSZY showed the radio was fine (owner's two-phone
+  test). Physical presence on the cube's Wi-Fi is the auth; the person
+  opening the panel now outranks a socket nobody is looking at.
+- **The panel sets the cube's clock on every connect.** The cube has no
+  clock battery and woke up in epoch zero, so contacts showed absurd
+  "last heard" ages. The firmware accepts only a time not earlier than its
+  own, so the clock can never be pushed back. Panel component v0.9.
+
 ## v0.8.8 — 2026-08-19 — the cube says which system it runs
 
 - **The INFO page shows the OS version.** The bottom line used to show the
