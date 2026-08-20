@@ -1,0 +1,2 @@
+c46a2871bc4e3b8b40befb63e5cfcc04949dd70d287102e91eb9f065f286054e  Biper_Unit_C6L-v0.9.0-29724a8-merged.bin
+1560032 bytes, commit 29724a8, env Biper_AP_C6L_wifi_only

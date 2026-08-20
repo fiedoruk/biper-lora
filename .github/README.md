@@ -62,7 +62,7 @@ Bluetooth. Everything below is what Biper adds on top, all of it in
 | **A relay switch that survives a restart** | Two modes, both named for what they do — `SIEC` (Polish for „network”) carries other people's messages onward; `SAM` („on your own”) transmits only yours. The cube has no battery, so a nudged cable is a reboot — the choice is stored in NVS, and the screen says which mode is on. |
 | **A panel served from the cube's own flash** | Join the cube's Wi-Fi and the phone becomes a screen and a keyboard. No account, no app store, no internet. 105 kB of HTML, 40.0 kB (40980 bytes) over the air after gzip. It carries a built-in guide, so the manual is inside the device. |
 | **A voice and a light** | Two or three notes per event, never a jingle. One addressable LED whose behaviour is documented next to the code that drives it — including the fact that ninja mode really does go dark, and that the radio keeps transmitting while it does. |
-| **Custody of the device** | Origin guard on the WebSocket bridge, a fixed per-cube eight-character Wi-Fi password (drawn once on first boot, 23-symbol alphabet with the OLED look-alike twins removed, shown only on the cube's own screen), the pairing PIN visible only inside a pairing window, private-key export compiled out — identity is disposable by design, contacts restore from the panel's local backup — and security headers on everything the cube serves. |
+| **Custody of the device** | Origin guard on the WebSocket bridge, a fixed per-cube eight-character Wi-Fi password (drawn once on first boot, 22-symbol alphabet with the OLED look-alike twins removed, shown only on the cube's own screen), private-key export compiled out — identity is disposable by design, contacts restore from the panel's local backup — and security headers on everything the cube serves. Since v0.9.0 the release build carries no Bluetooth at all: the panel is the interface, and whoever wants the official MeshCore app can flash stock MeshCore — the cube is not locked. |
 
 ## What the screen actually shows
 
@@ -100,11 +100,11 @@ throughout. Getting that order wrong resets the radio mid-operation.
 ## Build
 
 ```bash
-# full: mesh + BLE + Wi-Fi AP + panel over HTTP
-pio run -e Biper_AP_C6L_spike
-
-# USB companion, no BLE
+# THE RELEASE since v0.9.0: mesh + Wi-Fi AP + panel over HTTP + USB companion, no BLE
 pio run -e Biper_AP_C6L_wifi_only
+
+# development variant with BLE kept (not shipped)
+pio run -e Biper_AP_C6L_spike
 
 # after editing the panel — the build does NOT regenerate the asset for you
 python3 biper/app/gen-asset.py
@@ -148,7 +148,7 @@ C6L physically carries 16 MB even though the stock definition pretends 4).
 This is the part a reviewer should check first.
 
 ```
-70 files changed, 14493 insertions(+), 370 deletions(-)   # vs MeshCore companion-v1.17.1, as of 20 Aug 2026
+71 files changed, 14545 insertions(+), 370 deletions(-)   # vs MeshCore companion-v1.17.1, as of 20 Aug 2026
 ```
 
 Of those lines  about 7 000 sit in two generated headers — the gzipped panel
@@ -200,14 +200,14 @@ exact reviewed bytes; it does not promise that your rebuild will hash the same.
 
 **Measured**, on the bench, this repository:
 
-- both environments compile; the full env uses 53.7 % of its 4 MB app slot and 32.8 % RAM
+- both environments compile; the shipped wifi_only env uses 34.2 % of its 4 MB app slot and 25.7 % RAM
 - the radio entropy source is alive — five boots, 28–31 distinct values out of 32
   samples, 111–130 bits set out of 256, samples different every time (expected ≈ 30.2
   and 128 ± 8)
 - the panel is served, gzipped, and the expander is found at `0x43`
 
 **Not measured**, and therefore not claimed: range, power draw, battery behaviour,
-BLE against every phone, screen readers, and the whole of on-air behaviour under load.
+screen readers, and the whole of on-air behaviour under load.
 A `PASS` from a host gate is a statement about a host, and this repository never lets
 one pretend to be a statement about a device. The thirty-cube town in the first
 paragraph is the thesis this project exists to test, not a measurement.

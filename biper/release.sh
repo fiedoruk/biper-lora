@@ -10,7 +10,7 @@
 #   bash biper/release.sh [environment]      # default: Biper_AP_C6L_spike
 set -euo pipefail
 
-ENV="${1:-Biper_AP_C6L_spike}"
+ENV="${1:-Biper_AP_C6L_wifi_only}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 B="$ROOT/.pio/build/$ENV"
 [ -f "$B/firmware.bin" ] || { echo "error: $B/firmware.bin is missing — run: pio run -e $ENV"; exit 1; }

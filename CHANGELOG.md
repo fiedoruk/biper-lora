@@ -9,6 +9,47 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.9.0 — 2026-08-20 — the panel is the interface: Bluetooth leaves the release
+
+An owner decision, not a patch: the shipped firmware is now the
+`Biper_AP_C6L_wifi_only` environment. The BLE stack — and with it
+compatibility with the official MeshCore phone app — leaves the release
+build.
+
+Why. The panel served from the cube's own flash has been the product's whole
+interface since day one, and today's reviews confirmed what sharing the
+companion state costs: upstream broadcasts every response to all transports
+and keeps a single client's protocol state, so the official app over BLE and
+the panel used at the same time could interleave and corrupt each other's
+responses — a defect fixable only by surgery on MeshCore internals, paid
+again at every rebase. Removing the second transport removes the defect
+class, the always-advertising BLE pairing surface, and the screen's one
+blind spot (BLE conversations passed outside the layer, so SŁYSZĘ and
+DOSZŁO could not see them; now the screen sees all traffic).
+
+Measured on the desk pair before this release was cut:
+
+- application 2.25 MB → 1.43 MB (a web install about a third faster);
+- free heap with the hotspot window open: 101 kB → 221 kB;
+- the full pair truth run on the exact release binary: 10/10 direct
+  messages delivered both ways, delivery ACK median ~0.82 s, SNR +12 dB,
+  every ACK matched to its awaited tag;
+- boot adverts with per-cube jitter 11.8 s apart on a simultaneous boot.
+
+What this changes for a user: nothing on the product path (install from the
+browser, panel over the cube's own Wi-Fi). Whoever wants the official
+MeshCore app can flash stock MeshCore with the community flasher — the cube
+is not locked — and this installer will always bring Biper back.
+
+Also in this release: the USB port of the shipped build now speaks the
+companion protocol (inherited from the USB base environment). Physical
+possession of the cable was always full control — flashing included — and
+in exchange the release binary itself is now bench-testable end to end:
+the pair-truth run above talks to the exact shipped bytes. Private-key
+export stays compiled out. The INFO screen drops the BLE PIN line in this
+variant (nothing replaces it — the radio-preset line was already judged
+noise on 19.08).
+
 ## v0.8.23 — 2026-08-20 — the cross-verification pass: two independent reviewers, three closings
 
 Two more independent AI reviews of the fresh tree (one verifying yesterday's

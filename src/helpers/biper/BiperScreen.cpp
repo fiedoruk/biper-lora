@@ -576,6 +576,7 @@ static void draw_info_page() {
   snprintf(line, sizeof(line), "SLYSZE %u", (unsigned)biper_heard_15min());
   draw_text(0, 14, line);
 
+#if defined(BLE_PIN_CODE)
   // The BLE pin is shown only in a PAIRING WINDOW: the first three minutes
   // after power-on. Outside it, the line reads BLE ------.
   //
@@ -596,6 +597,14 @@ static void draw_info_page() {
     snprintf(line, sizeof(line), "BLE ------");
   }
   draw_text(0, 26, line);
+#else
+  // Wydanie wifi_only (decyzja wlasciciela 0.9.0, 20.08): BLE nie istnieje,
+  // wiec i wiersz pinu nie istnieje. Nic go nie zastepuje — preset radia
+  // zszedl z tej strony juz 19.08 (identyczny na kazdej kostce, odpowiadal
+  // na pytanie, ktorego nikt nie zadaje), a pusty wiersz to nie brak tresci,
+  // tylko mniej szumu.
+  (void)st;
+#endif
 
 // The bottom line used to show the radio preset (869.6 SF8) — identical on
   // every cube by design, so it answered a question nobody asked. What the
