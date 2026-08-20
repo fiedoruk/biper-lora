@@ -1,0 +1,2 @@
+440bf411f12da45ad3dba638fbc42a3893bd74631e640969cbe78b4207de2795  Biper_Unit_C6L-v0.8.19-6dad536-merged.bin
+2390768 bytes, commit 6dad536, env Biper_AP_C6L_spike
