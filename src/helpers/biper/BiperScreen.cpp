@@ -141,18 +141,21 @@ void biper_face_sent(bool expects_confirmation) {
 
 // RESP_SENT: kostka przyjela wysylke. Dla DM rejestrujemy znacznik i czekamy
 // (CZEKAM); kanal publiczny nie dostaje potwierdzen, wiec wraca do ZYJE.
-// RESP_CODE_SENT odpowiada takze innym komendom — przyjmujemy go wylacznie
-// jako skutek wlasnej transmisji (ekran stoi na NADAJE).
+// REJESTRACJA tagu jest niezalezna od rysowanej twarzy (rewident, 20.08):
+// przy dwoch szybkich DM-ach drugi RESP_SENT przychodzil, gdy ekran stal juz
+// na CZEKAM — straznik `face==NADAJE` wyrzucal jego znacznik i potwierdzenie
+// drugiej wiadomosci nie mialo w co trafic. Twarz to podglad, nie protokol.
 void biper_face_resp_sent(const uint8_t* tag_or_null) {
-  if (biper_face != FACE_NADAJE) return;
-  BiperFace f = FACE_ZYJE;
+  const bool nadaje = (biper_face == FACE_NADAJE);
   if (biper_face_pending > 0 && tag_or_null != nullptr) {
     biper_face_pending--;
     biper_tags.add(tag_or_null, millis());
-    f = FACE_CZEKAM;
+    if (nadaje) { biper_face_since = millis(); biper_face = FACE_CZEKAM; }
+  } else if (nadaje) {
+    // Kanal publiczny (nic nie czeka na potwierdzenie): wracamy do ZYJE.
+    biper_face_since = millis();
+    biper_face = FACE_ZYJE;
   }
-  biper_face_since = millis();
-  biper_face = f;
 }
 
 // PUSH_CONFIRMED: DOSZLO wylacznie za trafienie w zywy znacznik. Spoznione
@@ -585,16 +588,20 @@ static void draw_info_page() {
   snprintf(line, sizeof(line), "SLYSZE %u", (unsigned)biper_heard_15min());
   draw_text(0, 14, line);
 
-  // The BLE pin is shown only in a PAIRING WINDOW: the first three minutes after
-  // power-on, or while the hotspot window is open. Outside those, the line reads
-  // BLE ------.
+  // The BLE pin is shown only in a PAIRING WINDOW: the first three minutes
+  // after power-on. Outside it, the line reads BLE ------.
   //
   // It used to sit here permanently, three clicks away, always. Bonding in LE
   // Secure Connections is durable, so whoever picked the cube up off a table for
   // half a minute could pair their own phone and put it back. Nothing on the
   // cube would ever say so. A pairing pin exists for the moment of pairing;
   // afterwards it is only a key left in the lock.
-  const bool pairing_window = (millis() < BIPER_PIN_WINDOW_MS) || st.active;
+  // Czlon "|| st.active" wylecial przy autostarcie (rewident, 20.08): okno
+  // hotspotu jest odtad otwarte od 8. sekundy i potrafi zyc caly wieczor,
+  // wiec "PIN takze przy otwartym oknie" znaczylo "PIN zawsze" — dokladnie
+  // stan, ktory ten warunek mial zlikwidowac. Rollover-safe przez millis()
+  // wprost: po ~49,7 dnia PIN blysnie na trzy minuty — koszt akceptowalny.
+  const bool pairing_window = millis() < BIPER_PIN_WINDOW_MS;
   if (pairing_window) {
     snprintf(line, sizeof(line), "BLE %06lu", (unsigned long)st.ble_pin);
   } else {
@@ -727,9 +734,13 @@ static void wipe_everything() {
   // a zatrzask `wiping` trzymalby ekran "WYMAZUJE" na zawsze przy
   // nietknietych danych (audyt Kimi A-12). Ring drenuje petla mesh co
   // przebieg, wiec kilka krotkich prob wystarcza za caly backoff.
+  // Ring LOKALNY: przejecie sesji panelu w zlym momencie plukalo ring sesyjny
+  // razem z ramka wymazania — biper_ap_forget() zdazyl skasowac nasze klucze,
+  // a wlasciwy factory reset MeshCore nigdy nie ruszal i ekran wisial na
+  // "WYMAZUJE" przy zywej tozsamosci (rewident, 20.08).
   bool sent = false;
   for (int i = 0; i < 8 && !sent; i++) {
-    sent = biper_ap_interface()->onClientFrame(FRAME, sizeof(FRAME));
+    sent = biper_ap_interface()->onLocalCommand(FRAME, sizeof(FRAME));
     if (!sent) vTaskDelay(pdMS_TO_TICKS(25));
   }
   if (!sent) {

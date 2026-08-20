@@ -13,6 +13,7 @@
 class BiperApInterface : public BaseSerialInterface {
   struct Frame {
     uint16_t len;
+    uint8_t gen;  // generacja sesji WS (TX): stara odpowiedz nie trafia do nowego telefonu
     uint8_t buf[MAX_FRAME_SIZE];
   };
   // 8, nie 4 (upstreamowa glebia TCP): sekwencja startowa panelu to SZESC
@@ -29,18 +30,28 @@ class BiperApInterface : public BaseSerialInterface {
   }
 
   bool _enabled = false;
-  // Rings: single writer + single reader each, lock-free via volatile indices.
+  // Rings. Kontrakt SPSC okazal sie fikcja (rewident, 20.08): do RX pisza
+  // TRZY taski (httpd=panel, AP=adverty, ekran=WYMAZ), do indeksow TX siegal
+  // takeover z httpd. Dlatego: (a) rozkazy LOKALNE maja WLASNY ring, ktorego
+  // plukanie po takeover nie dotyka — wyplukanie zakolejkowanego WYMAZANIA
+  // zostawialoby ekran "WYMAZUJE" przy nietknietych danych; (b) kazda operacja
+  // na ringach idzie pod jednym mutexem (sekcje krotkie, C6 jednordzeniowy,
+  // dziedziczenie priorytetow w FreeRTOS); (c) ramki TX niosa generacje sesji.
+  void* _mtx = nullptr;  // SemaphoreHandle_t; tworzony w enable()
   Frame _rx[QUEUE_SIZE];
   volatile uint8_t _rx_head = 0, _rx_tail = 0;
+  Frame _lo[4];  // rozkazy lokalne (WYMAZ, adverty) — nigdy nie plukane
+  volatile uint8_t _lo_head = 0, _lo_tail = 0;
   // Plukanie po takeover: do ktorego miejsca (F-06) i czy zlecone.
   volatile uint8_t _rx_flush_upto = 0;
   volatile bool _rx_flush_req = false;
+  volatile uint8_t _session_gen = 0;
   Frame _tx[QUEUE_SIZE];
   volatile uint8_t _tx_head = 0, _tx_tail = 0;
 
 public:
   // BaseSerialInterface
-  void enable() override { _enabled = true; }
+  void enable() override;
   void disable() override;
   bool isEnabled() const override { return _enabled; }
   bool isConnected() const override;
@@ -54,16 +65,16 @@ public:
   // znac: cicho zgubiona ramka kasowania zostawialaby ekran 'WYMAZUJE' na
   // zawsze przy nietknietych danych (audyt Kimi A-12).
   bool onClientFrame(const uint8_t* payload, size_t len);
+  // Rozkaz LOKALNY (WYMAZ z przycisku, adverty warstwy) — wlasny ring,
+  // odporny na plukanie po przejeciu sesji panelu.
+  bool onLocalCommand(const uint8_t* payload, size_t len);
   void drainTx();  // runs inside httpd context via httpd_queue_work
   void resetQueues();
-  // Zeruje SAM ring TX — na progu przejecia sesji (patrz biper_ws_session_open).
-  void dropTxQueue() { _tx_head = _tx_tail = 0; }
-  // Zleca plukanie RX DO BIEZACEGO head (ramki sprzed przejecia sesji).
-  // Wolane z taska httpd (producenta), wykonane przez konsumenta w
-  // checkRecvFrame. Znacznik miejsca jest konieczny: plukanie "wszystkiego"
-  // zjadalo APP_START nowego klienta, ktory zdazyl wejsc przed najblizszym
-  // przebiegiem petli mesh — iOS wisial wiecznie na LACZE (biurko, 20.08).
-  void requestRxFlush() { _rx_flush_upto = _rx_head; _rx_flush_req = true; }
+  // Prog przejecia sesji: nowa generacja (stare TX gasna w drainTx) + plukanie
+  // ringu WS do znacznika. Znacznik miejsca jest konieczny: plukanie
+  // "wszystkiego" zjadalo APP_START nowego klienta, ktory zdazyl wejsc przed
+  // najblizszym przebiegiem petli mesh — iOS wisial wiecznie na LACZE (20.08).
+  void beginSession() { _session_gen = (uint8_t)(_session_gen + 1); _rx_flush_upto = _rx_head; _rx_flush_req = true; }
 };
 
 BiperApInterface* biper_ap_interface();
@@ -80,6 +91,7 @@ uint32_t biper_ws_tx_count();
 // millis() ostatniej ramki OD klienta — okno AP odswieza sie tylko przy zywym
 // panelu, nie przy samym skojarzeniu stacji (audyt Codexa F-04).
 uint32_t biper_ws_last_rx_millis();
+void biper_ws_note_rx();  // tylko handler WS; lokalne rozkazy NIE sa aktywnoscia
 
 // New-message signal for the OLED faces. The interface reports isConnected()
 // while enabled, so upstream sends the PUSH 0x83 "message waiting" tickle even

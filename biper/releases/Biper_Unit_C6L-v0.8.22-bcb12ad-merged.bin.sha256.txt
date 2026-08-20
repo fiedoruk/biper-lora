@@ -1,0 +1,2 @@
+1d3eea54b2cdb23dc6754cac3a45a5ee438682934ece74ca7345de11b8fe6bef  Biper_Unit_C6L-v0.8.22-bcb12ad-merged.bin
+2392512 bytes, commit bcb12ad, env Biper_AP_C6L_spike

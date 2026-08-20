@@ -76,13 +76,11 @@ static volatile int biper_ws_fd = -1;
 int biper_ws_fd_get() { return biper_ws_fd; }
 
 void biper_ws_session_open(httpd_handle_t hd, int fd) {
-  // Ring TX zerowany na progu sesji: po takeover ramki zakolejkowane dla
-  // STAREGO telefonu wysylaly sie do nowego (audyt Kimi B-05.1). Rozkazy
-  // starego telefonu czekajace w RX takze nie moga wykonac sie na koncie
-  // nowej sesji (audyt Codexa F-06) — plukanie wykonuje KONSUMENT (petla
-  // mesh) i tylko DO miejsca przejecia; szczegoly przy requestRxFlush().
-  biper_iface.dropTxQueue();
-  biper_iface.requestRxFlush();
+  // Prog przejecia sesji: nowa generacja TX (odpowiedzi dla STAREGO telefonu
+  // gasna w drainTx zamiast leciec do nowego — audyt Kimi B-05.1, bez ruszania
+  // indeksow producenta) + plukanie ringu WS do znacznika (audyt Codexa F-06);
+  // rozkazy LOKALNE maja wlasny ring i takeover ich nie dotyka.
+  biper_iface.beginSession();
   biper_ws_hd = hd;
   biper_ws_fd = fd;
   Serial.printf("[BIPER_WS] client connected fd=%d\n", fd);
@@ -115,10 +113,18 @@ uint32_t biper_ws_tx_count() { return biper_tx_frames; }
 // Panel podtrzymuje sie sam pulsem GET_BATT co minute.
 static volatile uint32_t biper_ws_last_rx = 0;
 uint32_t biper_ws_last_rx_millis() { return biper_ws_last_rx; }
+// Wolane WYLACZNIE z handlera WS po ramce od klienta — patrz onClientFrame.
+void biper_ws_note_rx() { biper_ws_last_rx = millis(); }
 
 static volatile bool biper_msg_flag = false;
 bool biper_msg_waiting() { return biper_msg_flag; }
 void biper_msg_clear() { biper_msg_flag = false; }
+
+void BiperApInterface::enable() {
+  // Mutex ringow — patrz komentarz w naglowku (trzej producenci RX).
+  if (_mtx == nullptr) _mtx = (void*)xSemaphoreCreateMutex();
+  _enabled = true;
+}
 
 void BiperApInterface::disable() {
   _enabled = false;
@@ -126,8 +132,12 @@ void BiperApInterface::disable() {
 }
 
 void BiperApInterface::resetQueues() {
+  if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
   _rx_head = _rx_tail = 0;
+  _lo_head = _lo_tail = 0;
   _tx_head = _tx_tail = 0;
+  _rx_flush_req = false;
+  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
   biper_ws_session_close();
 }
 
@@ -170,11 +180,17 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   else if (src[0] == PUSH_CONFIRMED) biper_face_confirmed(len >= 5 ? &src[1] : nullptr);
   else if (src[0] == RESP_SENT) biper_face_resp_sent(len >= 6 ? &src[2] : nullptr);
   if (biper_ws_fd < 0 || biper_ws_hd == nullptr) return len;  // no client: observed, not deliverable
-  if (isWriteBusy()) return 0;
+  if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
+  if (isWriteBusy()) {
+    if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+    return 0;
+  }
   Frame& f = _tx[_tx_head];
   f.len = (uint16_t)len;
+  f.gen = _session_gen;  // odpowiedz nalezy do TEJ sesji; po takeover gasnie
   memcpy(f.buf, src, len);
   _tx_head = nextSlot(_tx_head);
+  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
   // Marshal the actual socket write into the httpd task context.
   if (httpd_queue_work(biper_ws_hd, [](void*) { biper_iface.drainTx(); }, nullptr) != ESP_OK) {
     biper_ws_session_close();  // pelna kolejka httpd: inaczej most milczy do restartu (Kimi B-05.3)
@@ -185,7 +201,8 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
 void BiperApInterface::drainTx() {
   while (_tx_tail != _tx_head) {
     Frame& f = _tx[_tx_tail];
-    if (biper_ws_fd >= 0) {
+    // Ramka z poprzedniej sesji gasnie tu, zamiast leciec do nowego telefonu.
+    if (biper_ws_fd >= 0 && f.gen == _session_gen) {
       httpd_ws_frame_t ws = {};
       ws.type = HTTPD_WS_TYPE_BINARY;
       ws.payload = f.buf;
@@ -202,9 +219,17 @@ void BiperApInterface::drainTx() {
 
 bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
   if (!_enabled || len == 0 || len > MAX_FRAME_SIZE) return false;
-  biper_ws_last_rx = millis();  // zywy panel, nie sama stacja (F-04)
+  // UWAGA: biper_ws_last_rx aktualizuje WYLACZNIE handler WS (BiperAp.cpp).
+  // Gdy robil to ten wspolny punkt, wlasny beacon co 10 min odswiezal
+  // "aktywnosc panelu" i martwe gniazdo trzymalo hotspot wiecznie —
+  // F-04 obchodzil sam siebie (rewident, 20.08).
+  if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
   const uint8_t next = nextSlot(_rx_head);
-  if (next == _rx_tail) { biper_rx_dropped = biper_rx_dropped + 1; return false; }  // ring full
+  if (next == _rx_tail) {
+    biper_rx_dropped = biper_rx_dropped + 1;
+    if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+    return false;  // ring full
+  }
   // The user pressed SEND: this is the only moment when we know about a
   // transmission before the radio answers. A public channel gets no delivery
   // confirmation, so after RESP_SENT it goes back to ZYJE instead of getting
@@ -218,13 +243,40 @@ bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
   memcpy(f.buf, payload, len);
   _rx_head = next;
   biper_rx_frames = biper_rx_frames + 1;
+  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
   // Ten return BYL nieobecny, a funkcja deklaruje bool — przy globalnym `-w`
   // kompilator milczal i wynik byl przypadkiem z rejestru (audyt Codexa F-01).
   // WIPE z przycisku dziala tylko dzieki temu, ze ta wartosc jest prawdziwa.
   return true;
 }
 
+bool BiperApInterface::onLocalCommand(const uint8_t* payload, size_t len) {
+  if (!_enabled || len == 0 || len > MAX_FRAME_SIZE) return false;
+  if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
+  const uint8_t next = (uint8_t)((_lo_head + 1) % 4);
+  if (next == _lo_tail) {
+    if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+    return false;  // pelny ring lokalny — wolajacy decyduje o ponowieniu
+  }
+  Frame& f = _lo[_lo_head];
+  f.len = (uint16_t)len;
+  memcpy(f.buf, payload, len);
+  _lo_head = next;
+  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+  return true;
+}
+
 size_t BiperApInterface::checkRecvFrame(uint8_t dest[]) {
+  if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
+  // Rozkazy LOKALNE (WYMAZ, adverty) przed sesyjnymi — i poza plukaniem.
+  if (_lo_tail != _lo_head) {
+    Frame& f = _lo[_lo_tail];
+    size_t len = f.len;
+    memcpy(dest, f.buf, len);
+    _lo_tail = (uint8_t)((_lo_tail + 1) % 4);
+    if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+    return len;
+  }
   // Plukanie po takeover — z wlasciwej strony ringu (konsument) i TYLKO do
   // znacznika przejecia: ramki nowego klienta, ktore weszly po nim, zostaja.
   // Straz `!= _rx_head` gwarantuje, ze ogon nigdy nie mija glowy (F-06).
@@ -233,11 +285,15 @@ size_t BiperApInterface::checkRecvFrame(uint8_t dest[]) {
     while (_rx_tail != _rx_flush_upto && _rx_tail != _rx_head)
       _rx_tail = nextSlot(_rx_tail);
   }
-  if (_rx_tail == _rx_head) return 0;
+  if (_rx_tail == _rx_head) {
+    if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+    return 0;
+  }
   Frame& f = _rx[_rx_tail];
   size_t len = f.len;
   memcpy(dest, f.buf, len);
   _rx_tail = nextSlot(_rx_tail);
+  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
   return len;
 }
 

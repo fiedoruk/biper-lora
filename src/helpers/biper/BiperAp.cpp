@@ -489,17 +489,22 @@ static esp_err_t ws_handler(httpd_req_t* req) {
     if (httpd_ws_recv_frame(req, &f, f.len) != ESP_OK) return ESP_FAIL;
   }
   if (f.type == HTTPD_WS_TYPE_BINARY && f.len > 0) {
+    biper_ws_note_rx();  // zywy panel = ramka od KLIENTA, nie lokalny rozkaz
     if (!biper_ap_interface()->onClientFrame(ws_buf, f.len)) {
       // Pelny ring RX gubil rozkaz PO CICHU — WYSLIJ znikalo bez sladu dla
       // panelu (audyt Codexa F-05). Krotka odpowiedz 0xB5 (spoza kodow
       // companion) mowi panelowi: zajete, sprobuj ponownie. Jestesmy w tasku
-      // httpd, wiec wolno odpowiedziec synchronicznie.
+      // httpd, wiec wolno odpowiedziec synchronicznie. Porazka wysylki 0xB5
+      // = gniazdo umiera; zamykamy sesje zamiast udawac, ze ostrzeglismy.
       static const uint8_t BUSY[] = {0xB5};
       httpd_ws_frame_t r = {};
       r.type = HTTPD_WS_TYPE_BINARY;
       r.payload = (uint8_t*)BUSY;
       r.len = sizeof(BUSY);
-      httpd_ws_send_frame(req, &r);
+      if (httpd_ws_send_frame(req, &r) != ESP_OK) {
+        biper_ws_session_close();
+        return ESP_FAIL;
+      }
     }
   } else if (f.type == HTTPD_WS_TYPE_CLOSE) {
     biper_ws_session_close();
@@ -847,24 +852,38 @@ static uint32_t biper_jitter(uint32_t modulo) {
   return (uint32_t)(fold % modulo);
 }
 
-static void biper_send_advert(const char* why) {
+static bool biper_send_advert(const char* why) {
   // Same frame the panel's ROZGLOS button sends: flood self-advert.
+  // Ring LOKALNY (nie sesyjny): takeover panelu nie moze zjesc advertu,
+  // a advert nie liczy sie jako "aktywnosc panelu" (rewident, 20.08).
+  // Stempel czasu DOPIERO po przyjeciu do ringu — zapis "wyslano" przy
+  // odrzuconej ramce przesuwal retry o cala godzine.
   static const uint8_t ADVERT[] = {7, 1};  // CMD_SEND_SELF_ADVERT
-  biper_ap_interface()->onClientFrame(ADVERT, sizeof(ADVERT));
+  if (!biper_ap_interface()->onLocalCommand(ADVERT, sizeof(ADVERT))) {
+    Serial.printf("[BIPER] advert enqueue FAILED (%s)\n", why);
+    return false;
+  }
   biper_advert_last_ms = millis();
   Serial.printf("[BIPER] advert sent (%s)\n", why);
+  return true;
 }
 
 static void biper_advert_tick() {
   const uint32_t t_now = millis();
   if (!biper_advert_done && t_now >= BIPER_ADVERT_BOOT_MS + biper_jitter(20000)) {
-    biper_advert_done = true;
-    if (biper_forwarding()) biper_send_advert("boot");
-    else Serial.printf("[BIPER] boot advert skipped (SAM)\n");
+    // advert_done dopiero po przyjeciu ramki: odrzucona probuje w nastepnym
+    // ticku, zamiast czekac godzine na periodic.
+    if (biper_forwarding()) {
+      if (biper_send_advert("boot")) biper_advert_done = true;
+    } else {
+      biper_advert_done = true;
+      Serial.printf("[BIPER] boot advert skipped (SAM)\n");
+    }
   }
   // Advert-reply: a new neighbour appeared; answer once the short delay
-  // passes, unless we have advertised recently anyway.
-  if (biper_advert_reply_at != 0 && t_now >= biper_advert_reply_at) {
+  // passes, unless we have advertised recently anyway. Porownanie ze znakiem:
+  // `>=` na surowych millis() strzela przedwczesnie przy rollover (~49,7 dnia).
+  if (biper_advert_reply_at != 0 && (int32_t)(t_now - biper_advert_reply_at) >= 0) {
     biper_advert_reply_at = 0;
     // The reply gets its OWN short gap, not the shared ten minutes: the
     // boot advert almost always fired within the last ten minutes, so the
@@ -885,12 +904,17 @@ static void biper_advert_tick() {
   // Presence beacon (zero-hop): see BIPER_PRESENCE_PERIOD_MS. First one
   // fires ~10 min after boot; switching SAM back to SIEC sends one at once,
   // so the cube reappears on neighbours' screens the moment it rejoins.
+  // Poza stalym jitterem z MAC kazdy cykl dostaje swiezy losowy dodatek —
+  // dwie kostki o pechowo bliskim foldzie nie powtarzaja kolizji co okres.
+  static uint32_t presence_extra = 0;
   if (biper_advert_done && biper_forwarding() &&
-      t_now - biper_presence_last_ms >= BIPER_PRESENCE_PERIOD_MS + biper_jitter(60000)) {
-    biper_presence_last_ms = t_now;
+      t_now - biper_presence_last_ms >= BIPER_PRESENCE_PERIOD_MS + biper_jitter(60000) + presence_extra) {
     static const uint8_t PRESENCE[] = {7, 0};  // CMD_SEND_SELF_ADVERT, zero-hop
-    biper_ap_interface()->onClientFrame(PRESENCE, sizeof(PRESENCE));
-    Serial.printf("[BIPER] advert sent (presence)\n");
+    if (biper_ap_interface()->onLocalCommand(PRESENCE, sizeof(PRESENCE))) {
+      biper_presence_last_ms = t_now;
+      presence_extra = esp_random() % 5000;
+      Serial.printf("[BIPER] advert sent (presence)\n");
+    }
   }
 }
 

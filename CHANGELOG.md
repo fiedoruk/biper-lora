@@ -9,6 +9,46 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.22 — 2026-08-20 — the adversarial pass: local commands get their own lane
+
+A second adversarial review of the day's changes (independent AI reviewer,
+prompted to break the autostart interactions) confirmed a deeper truth: the
+"SPSC" inbound ring was a fiction. Three tasks were producing into it — the
+panel's WebSocket handler, the AP task's adverts, and the screen task's
+button-wipe — and the day's new machinery made that visible in three ways.
+
+- **Local commands ride their own ring.** The button wipe and the layer's
+  adverts no longer share the session ring with panel frames: a phone
+  takeover can never flush a queued FACTORY_RESET (the screen said WYMAZUJE,
+  the identity survived), and one task can no longer corrupt another's
+  enqueue. All ring operations now run under one mutex (single-core C6,
+  priority inheritance, sections of a few microseconds).
+- **A cube's own beacon no longer counts as "panel activity".**
+  `biper_ws_last_rx` was refreshed by every enqueued frame — including the
+  presence beacon every ten minutes, which is shorter than the 3 + 10 minute
+  idle budget, so a dead socket kept the hotspot alive forever and F-04
+  defeated itself. Only the WebSocket handler notes activity now.
+- **TX frames carry a session generation.** Replies produced for the old
+  phone die in `drainTx` instead of reaching the new one, and nothing
+  touches the producer's ring index from the consumer's task any more.
+- **The second of two quick DMs keeps its delivery marker.** Tag
+  registration is decoupled from the displayed face: the face is a preview,
+  not a protocol guard.
+- **The BLE PIN window is three minutes from power-on again.** "…or while
+  the hotspot window is open" made sense with manual windows; with autostart
+  it meant "always".
+- Hardening: advert timers advance only after a successful enqueue (a
+  rejected boot advert retries next tick instead of waiting an hour); the
+  presence period gets a fresh random component each cycle on top of the
+  per-cube MAC offset; deadline comparisons are rollover-safe; a failed
+  0xB5 "busy" reply closes the dying session instead of pretending the
+  panel was warned.
+
+Known and accepted for now (tracked): the release build still enables BLE
+alongside the panel, and upstream's companion state is single-client — a
+phone on the official app and the panel used at the same time can interleave
+responses. The owner's call on shipping the Wi-Fi-only variant is pending.
+
 ## v0.8.21 — 2026-08-20 — the autostart aftermath: four live-desk regressions, same day
 
 v0.8.20's autostart armed a landmine that had been lying in the code since the
