@@ -524,7 +524,7 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
       <div class="kv"><b>iPhone</b><span data-k="a2hs_ios">Udostepnij &rarr; Do ekranu poczatk.</span></div>
       <div class="kv"><b>Android</b><span data-k="a2hs_and">Menu &#8942; &rarr; Dodaj do ekranu</span></div>
       <p style="color:var(--dim);font-size:12px;margin:8px 0 0" data-k="a2hs_note">Ikona
-      dziala, gdy telefon jest w sieci kostki (przycisk 3 s).</p>
+      dziala, gdy telefon jest w sieci kostki (wstaje sama po zasilaniu).</p>
     </div>
     <label class="f" data-k="f_bak">KOPIA ZAPASOWA</label>
     <div class="frame">
@@ -636,7 +636,7 @@ var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:
     sos_text:"POMOC! Potrzebuję pomocy.",cancel_text:"Odwołuję alarm - jestem bezpieczny.",
   f_a2hs:"NA EKRAN GŁÓWNY",a2hs_ios:"Udostępnij &rarr; Do ekranu począt.",
   a2hs_and:"Menu &#8942; &rarr; Dodaj do ekranu",
-  a2hs_note:"Ikona działa, gdy telefon jest w sieci kostki (przycisk 3 s).",
+  a2hs_note:"Ikona działa, gdy telefon jest w sieci kostki (wstaje sama po zasilaniu).",
   f_bak:"KOPIA ZAPASOWA",bak_none:"brak kopii — zrobi się sama po synchronizacji",
   bak_info:"kontaktów: %n · zapis: %t",b_restore:"PRZYWRÓĆ",restored:"przywrócono %n",
   z1:"U mnie OK",z2:"Gdzie jesteś?",z3:"Wracam do domu",z4:"Czekam tutaj",
@@ -678,7 +678,7 @@ en:{sos_sub:"I need help",h_node:"NODE",k_name:"name",k_radio:"radio",
     sos_text:"HELP! I need help.",cancel_text:"Cancelling the alarm - I am safe.",
   f_a2hs:"HOME SCREEN",a2hs_ios:"Share &rarr; Add to Home Screen",
   a2hs_and:"Menu &#8942; &rarr; Add to Home screen",
-  a2hs_note:"The icon works while the phone is on the cube's network (3 s button).",
+  a2hs_note:"The icon works while the phone is on the cube's network (it starts by itself at power-on).",
   f_bak:"BACKUP",bak_none:"no backup yet — made automatically after a sync",
   bak_info:"contacts: %n · saved: %t",b_restore:"RESTORE",restored:"restored %n",
   z1:"I am OK",z2:"Where are you?",z3:"Heading home",z4:"Waiting here",
@@ -1346,7 +1346,7 @@ function odczytajStan(){
       $("f-wifi").value=String(d.ssid).replace(/^Biper-/,"");
     /* Wersja z KOSTKI, nie z pliku panelu: przy kilku kostkach i kilku
        wydaniach dziennie czlowiek musi widziec, ktory system tu dziala. */
-    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.16 / K5";
+    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.17 / K5";
   }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
 }
 
@@ -1627,7 +1627,7 @@ $("f-lang").onchange=function(){ustawJezyk(this.value)};
   if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
   if(j!==lang)ustawJezyk(j);
 })();
-$("ver").textContent="Biper panel v0.16 / K5 \u00b7 OS: \u2014";
+$("ver").textContent="Biper panel v0.17 / K5 \u00b7 OS: \u2014";
 /* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
    UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
    przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja
@@ -1702,6 +1702,9 @@ function FakeWS(){var s=this;s.binaryType="";
     f=f.concat([0,0,0,0, 0,0,0,0, 0,0,0,0]);
     return f}
   var zosia=[0xaa,1,2,3,4,5],marek=[0xbb,9,8,7,6,5],mockChanN=0,mockDmN=0;
+  /* Kontakt "z kodu": pojawia sie na liscie dopiero PO imporcie — filmy
+     poradnikowe pokazuja prawdziwy skutek, nie sama animacje przycisku. */
+  var helena=[0xcc,4,4,2,2,7],importOk=false;
   s.send=function(data){var b=new Uint8Array(data),c=b[0];
     if(c===CMD.APP_START){
       var name="Biper-15FE",f=[RESP.SELF_INFO,1,22,22];
@@ -1713,10 +1716,17 @@ function FakeWS(){var s=this;s.binaryType="";
       pushText(f,name);    /* name runs from offset 58 to the end */
       reply(f)}
     else if(c===CMD.GET_CONTACTS){
-      reply([RESP.C_START,2]);
+      reply([RESP.C_START,importOk?3:2]);
       reply(contact(zosia,"Zosia",180,PATH_DIRECT),200);
       reply(contact(marek,"Marek",4100,2),280);
+      if(importOk)reply(contact(helena,"Helena",30,PATH_DIRECT),330);
       reply([RESP.C_END],360)}
+    else if(c===CMD.EXPORT){
+      /* RESP 11: [11][pakiet advertu] — trescia atrapy sa stale bajty, bo
+         panel i tak pokazuje tylko base64 z prefiksem BIPER1:. */
+      var pak=[0x11,0x22,0x33].concat(zosia).concat([7,7,7,7],new Array(28).fill(0x5a));
+      reply([11].concat(pak),250)}
+    else if(c===CMD.IMPORT){importOk=true;reply([RESP.OK],250)}
     else if(c===CMD.GET_BATT){/* 0 mV: C6L nie ma ogniwa ani pomiaru — atrapa
       ma mowic to samo, co plytka, inaczej makiety pokazuja nieistniejacy
       pomiar */reply([RESP.BATT,0,0,0,0,0,0,0,0,0,0])}
