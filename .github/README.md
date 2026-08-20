@@ -13,7 +13,7 @@ without reading a manual.
 [![Base: MeshCore companion-v1.17.1](https://img.shields.io/badge/base-MeshCore%20companion--v1.17.1-555)](https://github.com/meshcore-dev/MeshCore)
 [![Board: M5Stack Unit C6L](https://img.shields.io/badge/board-M5Stack%20Unit%20C6L-ff5d3a)](https://docs.m5stack.com/en/unit/Unit_C6L)
 [![Radio: SX1262 868 MHz](https://img.shields.io/badge/radio-SX1262%20868%20MHz-087357)](#legal-and-radio-boundaries)
-[![Upstream files touched: 13](https://img.shields.io/badge/upstream%20files%20touched-13-81540a)](#how-this-fork-touches-upstream)
+[![Upstream files touched: 24](https://img.shields.io/badge/upstream%20files%20touched-24-81540a)](#how-this-fork-touches-upstream)
 
 > **Status.** The host side works and is gated in CI. The pair works: on
 > 20 August 2026 two cubes on this build exchanged direct messages both ways,
@@ -58,9 +58,9 @@ Bluetooth. Everything below is what Biper adds on top, all of it in
 | | |
 |---|---|
 | **A screen language** | 64 × 48 pixels, one bit deep. Six states, each an animated field rather than a word: at rest the field flows and carries `BIPER`, and its speed is the density of the mesh around you. Ported to the website pixel-for-pixel and kept honest by a gate that compiles the firmware's own drawing functions and diffs the frames. |
-| **One button, five gestures** | Click cycles the screen. Double click is silence and darkness. Triple click switches whether the cube relays other people's traffic. Three seconds brings up a Wi-Fi hotspot. Ten seconds wipes the cube, counting down from the fourth second so nobody wipes one by leaning on it. |
+| **One button, five gestures** | Click cycles the screen. Double click is silence and darkness. Triple click switches whether the cube relays other people's traffic. Three seconds toggles the Wi-Fi hotspot (it also opens by itself at power-on — the panel is the cube's only interface). Ten seconds wipes the cube, counting down from the sixth second so nobody wipes one by leaning on it — and the gesture works even with a dead display, audibly. |
 | **A relay switch that survives a restart** | Two modes, both named for what they do — `SIEC` (Polish for „network”) carries other people's messages onward; `SAM` („on your own”) transmits only yours. The cube has no battery, so a nudged cable is a reboot — the choice is stored in NVS, and the screen says which mode is on. |
-| **A panel served from the cube's own flash** | Hold the button, join the cube's Wi-Fi, and the phone becomes a screen and a keyboard. No account, no app store, no internet. 104 kB of HTML, 39.5 kB (40545 bytes) over the air after gzip. It carries a built-in guide, so the manual is inside the device. |
+| **A panel served from the cube's own flash** | Join the cube's Wi-Fi and the phone becomes a screen and a keyboard. No account, no app store, no internet. 105 kB of HTML, 40.0 kB (40980 bytes) over the air after gzip. It carries a built-in guide, so the manual is inside the device. |
 | **A voice and a light** | Two or three notes per event, never a jingle. One addressable LED whose behaviour is documented next to the code that drives it — including the fact that ninja mode really does go dark, and that the radio keeps transmitting while it does. |
 | **Custody of the device** | Origin guard on the WebSocket bridge, a fixed per-cube eight-character Wi-Fi password (drawn once on first boot, 23-symbol alphabet with the OLED look-alike twins removed, shown only on the cube's own screen), the pairing PIN visible only inside a pairing window, private-key export compiled out — identity is disposable by design, contacts restore from the panel's local backup — and security headers on everything the cube serves. |
 
@@ -140,15 +140,15 @@ asset matches its source, and re-computes the numbers this README claims — see
 Both environments are additive: they live in
 [`variants/biper_ap/platformio.ini`](../variants/biper_ap/platformio.ini), which the
 root `extra_configs` wildcard picks up, so no upstream configuration file is edited to
-add them. `huge_app` partitions, because mesh + BLE + Wi-Fi + HTTP does not fit the
-stock app slot.
+add them. Partitions are our own 16 MB OTA-ready table (two 4 MB app slots — the
+C6L physically carries 16 MB even though the stock definition pretends 4).
 
 ## How this fork touches upstream
 
 This is the part a reviewer should check first.
 
 ```
-63 files changed, 13593 insertions(+), 370 deletions(-)   # vs MeshCore companion-v1.17.1, as of 20 Aug 2026
+67 files changed, 14174 insertions(+), 370 deletions(-)   # vs MeshCore companion-v1.17.1, as of 20 Aug 2026
 ```
 
 Of those lines  about 7 000 sit in two generated headers — the gzipped panel
@@ -163,7 +163,7 @@ git diff --shortstat companion-v1.17.1 HEAD
 git diff --numstat  companion-v1.17.1 HEAD -- examples/companion_radio/main.cpp
 ```
 
-Upstream is touched in thirteen files, and each kind is easy to audit.
+Upstream is touched in 24 files, and each kind is easy to audit.
 `examples/companion_radio/main.cpp`, **+94 / −0**, in four blocks that announce
 themselves:
 
@@ -173,21 +173,34 @@ themselves:
 // ---- end BIPER_AP hook ----
 ```
 
-Deleted: upstream's `CNAME` and `FUNDING.yml` (a fork must not claim the
-upstream project's Pages domain or route funding meant for upstream) and six of
-upstream's release/CI workflows — they build and publish artifacts this fork
-does not ship. Rewritten for this fork: `CONTRIBUTING.md` and `SECURITY.md`.
-Extended: `.gitignore` and `license.txt` (one added copyright line for the
-Biper layer). Everything else is new files under `src/helpers/biper/`,
-`variants/biper_ap/`, `biper/` and `fonts/`. Nothing upstream is renamed or
-reformatted, and no upstream source file is edited beyond `main.cpp`.
-Rebasing onto a new MeshCore release means resolving one file.
+Eight further upstream source files carry small, commented hardening and
+product edits — `MyMesh.cpp/.h` (frame length gates, UTF-8 truncation safety,
+the Biper duty-cycle getter, protocol version), `Mesh.cpp`, `Dispatcher.cpp`,
+`AdvertDataHelpers.cpp` and `BaseChatMesh.cpp/.h` (length gates and the
+`MAX_CONTACTS` guard), and `variants/m5stack_unit_c6l/platformio.ini` (TCXO
+3.0 V per the vendor schematic). Deleted: upstream's `CNAME` and `FUNDING.yml`
+(a fork must not claim the upstream project's Pages domain or route funding
+meant for upstream) and six of upstream's release/CI workflows — they build
+and publish artifacts this fork does not ship. Rewritten for this fork:
+`README.md`, `CONTRIBUTING.md` and `SECURITY.md`. Extended: `.gitignore` and
+`license.txt` (one added copyright line for the Biper layer). Everything else
+is new files under `src/helpers/biper/`, `variants/biper_ap/`, `biper/` and
+`fonts/`. Nothing upstream is renamed or reformatted. This stopped being a
+one-file overlay in August 2026; it is an openly maintained variant, and a
+rebase onto a new MeshCore release means walking this list — every hunk is
+small and announces itself.
+
+A note on reproducibility: rebuilding the same source does **not** produce a
+bit-identical binary across clean caches — the ESP-IDF application descriptor
+embeds compile metadata (a rebuild measured on 20 Aug 2026 differed by
+74 bytes: timestamps and the trailing hashes). The published SHA-256 pins the
+exact reviewed bytes; it does not promise that your rebuild will hash the same.
 
 ## What is measured and what is not
 
 **Measured**, on the bench, this repository:
 
-- both environments compile; flash 71.1 %, RAM 32.9 %
+- both environments compile; the full env uses 53.7 % of its 4 MB app slot and 32.8 % RAM
 - the radio entropy source is alive — five boots, 28–31 distinct values out of 32
   samples, 111–130 bits set out of 256, samples different every time (expected ≈ 30.2
   and 128 ± 8)

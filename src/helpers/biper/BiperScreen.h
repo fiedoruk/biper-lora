@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Tomasz Fiedoruk
 #pragma once
 
+#include <stdint.h>
+
 // C6L OLED status screen. SSD1306 64x48 over the shared LoRa SPI bus, driven
 // in an own low-rate FreeRTOS task. Layout is hand-placed for exactly 64x48 —
 // pixel-perfect owner requirement.
@@ -41,10 +43,17 @@ enum BiperFace {
 // DOSZLO about something it was still waiting for, or hung a full minute on
 // CZEKAM after a channel message that will never be confirmed at all.
 // So we count sends awaiting confirmation instead of remembering the last one.
+// F-03 (audyt Codexa): DOSZLO dodatkowo dopasowywane PO ZNACZNIKU — RESP_SENT
+// rejestruje 4-bajtowy tag oczekiwanego potwierdzenia, PUSH_CONFIRMED musi
+// w niego trafic. Spoznione albo cudze potwierdzenie nie zmienia ekranu.
 #if defined(BIPER_AP) && defined(BIPER_SCREEN)
 void biper_face_set(BiperFace f);
 void biper_face_sent(bool expects_confirmation);
+void biper_face_resp_sent(const uint8_t* tag_or_null);   // RESP_SENT z ramki
+void biper_face_confirmed(const uint8_t* tag_or_null);   // PUSH_CONFIRMED z ramki
 #else
 static inline void biper_face_set(BiperFace) {}
 static inline void biper_face_sent(bool) {}
+static inline void biper_face_resp_sent(const uint8_t*) {}
+static inline void biper_face_confirmed(const uint8_t*) {}
 #endif

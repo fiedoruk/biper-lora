@@ -9,6 +9,7 @@
 #include "BiperApInterface.h"
 #include "BiperButton.h"
 #include "BiperFeedback.h"
+#include "BiperLogic.h"
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -51,10 +52,16 @@ static const uint32_t BIPER_PIN_WINDOW_MS = 180000;   // three minutes from boot
 // How long a button press lights the panel while ninja mode is on.
 static const uint32_t BIPER_NINJA_WAKE_MS = 4000;
 // Wipe gesture: the countdown becomes visible after BIPER_WIPE_FROM_MS and the
-// wipe happens at BIPER_WIPE_MS. Six seconds of visible warning is the whole
+// wipe happens at BIPER_WIPE_MS. The visible warning is the whole
 // anti-accident design — no confirmation dialog exists on a 64x48 screen with
 // one button.
-static const uint32_t BIPER_WIPE_FROM_MS = 4000;
+// 6000, nie 4000 (wlasciciel, 20.08, na zywych kostkach): gest hotspotu
+// urosl do rownych 3 s i przy progu 4 s zostawala JEDNA sekunda ludzkiego
+// luzu — "trzymam okolo trzech sekund" co drugi raz konczylo sie ekranem
+// WYMAZ zamiast Wi-Fi. Martwa strefa 3-6 s: po odpaleniu gestu hotspotu
+// jest czas spokojnie puscic, a zamiar wymazania i tak wymaga swiadomych
+// dziesieciu sekund.
+static const uint32_t BIPER_WIPE_FROM_MS = 6000;
 static const uint32_t BIPER_WIPE_MS = 10000;
 static const uint32_t BIPER_SCR_REFRESH_MS = 1000;    // static-page refresh
 static const uint32_t BIPER_SCR_TOAST_MS = 800;       // mode-change confirmation
@@ -104,23 +111,20 @@ static inline bool page_is_face() {
 // out-of-date promise.
 static volatile BiperFace biper_face = FACE_ZYJE;
 static volatile uint32_t biper_face_since = 0;   // millis() of the last change
-// How many of our sends are still waiting for a delivery confirmation. int8_t,
-// because the queue depth is small anyway and overflowing upwards is the more
-// dangerous failure here than a lost count: clamped at 8 with room to spare.
+// How many of our DM sends still await their RESP_SENT (the moment the tag of
+// the expected confirmation becomes known). int8_t, because the queue depth is
+// small anyway and overflowing upwards is the more dangerous failure here than
+// a lost count: clamped at 8 with room to spare. The wait for the CONFIRMATION
+// itself lives in biper_tags below, matched by tag (audyt Codexa F-03).
 static volatile int8_t biper_face_pending = 0;
 
+// Znaczniki potwierdzen, na ktore NAPRAWDE czekamy. Dotykane wylacznie z petli
+// mesh (writeFrame -> biper_face_resp_sent/confirmed), wiec bez blokad.
+static BiperPendingTags biper_tags;
+
 void biper_face_set(BiperFace f) {
-  if (f == FACE_CZEKAM) {
-    // RESP_CODE_SENT is also the answer to other commands, so we accept CZEKAM
-    // ONLY as a consequence of our own transmission.
-    if (biper_face != FACE_NADAJE) return;
-    // A public channel gets no delivery confirmation — waiting for one would be
-    // a promise with nothing behind it. We go back to ZYJE.
-    if (biper_face_pending <= 0) f = FACE_ZYJE;
-  }
-  // A confirmation clears ONE pending send. We do not zero the counter: two
-  // messages in flight and one confirmation means one is still waiting.
-  if (f == FACE_DOSZLO && biper_face_pending > 0) biper_face_pending--;
+  // CZEKAM i DOSZLO nie wchodza juz ta droga — maja wlasne funkcje ponizej,
+  // z dopasowaniem po znaczniku (audyt Codexa F-03).
   // Timestamp BEFORE state, and the order is load-bearing. These two writes are
   // not atomic and the screen task reads both: if the state landed first and the
   // task ran in between, it would judge a fresh state by a stale timestamp and
@@ -133,6 +137,33 @@ void biper_face_set(BiperFace f) {
 void biper_face_sent(bool expects_confirmation) {
   if (!expects_confirmation) return;             // shared channel: nothing to wait for
   if (biper_face_pending < 8) biper_face_pending++;
+}
+
+// RESP_SENT: kostka przyjela wysylke. Dla DM rejestrujemy znacznik i czekamy
+// (CZEKAM); kanal publiczny nie dostaje potwierdzen, wiec wraca do ZYJE.
+// RESP_CODE_SENT odpowiada takze innym komendom — przyjmujemy go wylacznie
+// jako skutek wlasnej transmisji (ekran stoi na NADAJE).
+void biper_face_resp_sent(const uint8_t* tag_or_null) {
+  if (biper_face != FACE_NADAJE) return;
+  BiperFace f = FACE_ZYJE;
+  if (biper_face_pending > 0 && tag_or_null != nullptr) {
+    biper_face_pending--;
+    biper_tags.add(tag_or_null, millis());
+    f = FACE_CZEKAM;
+  }
+  biper_face_since = millis();
+  biper_face = f;
+}
+
+// PUSH_CONFIRMED: DOSZLO wylacznie za trafienie w zywy znacznik. Spoznione
+// (po minucie), zdublowane albo cudze potwierdzenie nie zmienia ekranu —
+// w produkcie, ktorego rdzeniem jest zaufanie do statusu, ekran nie ma prawa
+// obiecac doreczenia, na ktore nikt nie czekal (audyt Codexa F-03/F-19).
+void biper_face_confirmed(const uint8_t* tag_or_null) {
+  if (tag_or_null == nullptr) return;
+  if (!biper_tags.confirm(tag_or_null, millis())) return;
+  biper_face_since = millis();
+  biper_face = FACE_DOSZLO;
 }
 
 // Expiry times. Every state has an end — the screen must not claim CZEKAM for
@@ -702,15 +733,23 @@ static void wipe_everything() {
     if (!sent) vTaskDelay(pdMS_TO_TICKS(25));
   }
   if (!sent) {
-    scr->clearDisplay();
-    scr->setTextSize(1);
-    draw_centered(14, "ZAJETE");
-    draw_centered(26, "SPROBUJ ZNOWU");
-    scr->display();
-    toast_until = millis() + BIPER_SCR_TOAST_MS;
+    // Bez ekranu (padniety OLED, F-02) odmowe slychac zamiast widac.
+    if (scr != nullptr) {
+      scr->clearDisplay();
+      scr->setTextSize(1);
+      draw_centered(14, "ZAJETE");
+      draw_centered(26, "SPROBUJ ZNOWU");
+      scr->display();
+      toast_until = millis() + BIPER_SCR_TOAST_MS;
+    } else {
+      biper_feedback_click();
+    }
     return;
   }
   wiping = true;
+  // Przyjecie wymazania potwierdzamy takze dzwiekiem/LED — na kostce bez
+  // dzialajacego ekranu to jedyny dowod, ze gest zadzialal (Codex F-02).
+  biper_feedback_gesture();
   // MeshCore's factory reset knows nothing about our storage (the SIEC/SAM
   // bit, the fixed hotspot password) — we clear it ourselves, so a wiped cube
   // really does come up like new.
@@ -772,12 +811,33 @@ static void biper_screen_task(void*) {
 
   if (!screen_init()) {
     // Bez ekranu petla dalej obsluguje przycisk i feedback — tylko nie rysuje.
+    // Gest 10 s dziala takze TUTAJ (audyt Codexa F-02): padnieta tasma OLED nie
+    // moze odbierac czlowiekowi jedynej lokalnej drogi wyczyszczenia kostki.
+    // Odliczania nie widac, wiec je SLYCHAC: klik co sekunde od 4. sekundy
+    // trzymania, potem melodia gestu potwierdza przyjecie wymazania.
+    uint32_t last_tick_s = 0;
+    bool hold_toggled = false;
     for (;;) {
-      if (button_ok) {
+      if (button_ok && !wiping) {
         const BiperButtonEvent ev = biper_button_poll();
-        if (ev == BIPER_BTN_HOLD) { biper_feedback_gesture(); biper_ap_request_toggle(); }
-        else if (ev == BIPER_BTN_DOUBLE) biper_set_ninja(!biper_ninja());
-        else if (ev == BIPER_BTN_TRIPLE) { biper_feedback_gesture(); biper_forwarding_toggle(); }
+        const uint32_t held_ms = biper_button_held_ms();
+        if (ev == BIPER_BTN_PRESS) hold_toggled = false;
+        if (held_ms >= BIPER_WIPE_FROM_MS) {
+          // Jak w petli z ekranem: dojscie do strefy WYMAZ cofa przelaczenie
+          // okna odpalone w 3. sekundzie tego samego ucisku.
+          if (hold_toggled) { hold_toggled = false; biper_ap_request_toggle(); }
+          if (held_ms >= BIPER_WIPE_MS) {
+            wipe_everything();
+          } else if (held_ms / 1000 != last_tick_s) {
+            last_tick_s = held_ms / 1000;
+            biper_feedback_click();
+          }
+        } else {
+          last_tick_s = 0;
+          if (ev == BIPER_BTN_HOLD) { biper_feedback_gesture(); biper_ap_request_toggle(); hold_toggled = true; }
+          else if (ev == BIPER_BTN_DOUBLE) biper_set_ninja(!biper_ninja());
+          else if (ev == BIPER_BTN_TRIPLE) { biper_feedback_gesture(); biper_forwarding_toggle(); }
+        }
       }
       biper_feedback_tick(biper_ap_get_state().active, millis());
       vTaskDelay(pdMS_TO_TICKS(BIPER_SCR_TICK_MS));
@@ -789,6 +849,9 @@ static void biper_screen_task(void*) {
   bool prev_active = false;
   bool prev_msg = false;
   uint8_t prev_guests = 0;
+  // Czy 3-sekundowy gest hotspotu odpalil sie w BIEZACYM ucisku — do cofniecia,
+  // gdy ten sam nieprzerwany ucisk dojedzie do strefy wymazania.
+  bool hold_toggled = false;
   for (;;) {
     if (wiping) {
       // Erasing: the fastest rings the cube can draw (faster than POMOC),
@@ -826,6 +889,11 @@ static void biper_screen_task(void*) {
       const uint32_t held_ms = biper_button_held_ms();
       if (held_ms >= BIPER_WIPE_FROM_MS) {
         ninja_panel(true);          // the countdown must show in ninja too
+        // Ten sam nieprzerwany ucisk odpalil juz gest hotspotu w 3. sekundzie.
+        // Kto doszedl do odliczania, nie chcial przelaczac okna — cofamy tamto
+        // przelaczenie, wiec przerwane wymazanie zostawia kostke w stanie
+        // sprzed calego gestu (wlasciciel, 20.08: "co drugi raz nie wlacza").
+        if (hold_toggled) { hold_toggled = false; biper_ap_request_toggle(); }
         if (wipe_countdown(held_ms)) { wipe_everything(); continue; }
         // Tick feedbacku takze w odliczaniu: bez niego LED i melodia
         // zamieraly na cale 6 s trzymania przycisku (Kimi A-11).
@@ -839,6 +907,7 @@ static void biper_screen_task(void*) {
         // The person clicking then hears that the cube is counting and knows
         // when to add the third. The action itself comes after the window
         // closes, below.
+        hold_toggled = false;       // nowy ucisk = czysta historia gestu
         biper_feedback_click();
       } else if (ev == BIPER_BTN_CLICK) {
         if (biper_msg_waiting()) {
@@ -856,6 +925,7 @@ static void biper_screen_task(void*) {
       } else if (ev == BIPER_BTN_HOLD) {
         biper_feedback_gesture();
         biper_ap_request_toggle();
+        hold_toggled = true;        // do cofniecia, gdyby ucisk doszedl do WYMAZ
         biper_page = PAGE_NETWORK;
         redraw_now = true;
       }
@@ -899,7 +969,12 @@ static void biper_screen_task(void*) {
 }
 
 void biper_screen_start() {
-  xTaskCreate(biper_screen_task, "biper_scr", 4096, NULL, 1, NULL);
+  // Bez tego zadania nie ma ekranu, gestow ani feedbacku. Zawiedziona alokacja
+  // ma zostawic slad w logu zamiast udawac, ze wszystko gra (Codex F-14);
+  // mesh i mostek panelu dzialaja dalej bez nas.
+  if (xTaskCreate(biper_screen_task, "biper_scr", 4096, NULL, 1, NULL) != pdPASS)
+    Serial.printf("[BIPER_SCR] task create FAILED, heap=%lu\n",
+                  (unsigned long)ESP.getFreeHeap());
 }
 
 #endif  // BIPER_AP && BIPER_SCREEN

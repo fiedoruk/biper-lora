@@ -14,7 +14,9 @@ on:
       - 'variants/biper_ap/**'
       - 'variants/m5stack_unit_c6l/**'
       - 'biper/**'
+      - 'boards/**'
       - 'fonts/**'
+      - 'test/**'
       - 'examples/companion_radio/**'
       - 'platformio.ini'
       - '.github/README.md'
@@ -73,6 +75,40 @@ jobs:
         run: |
           grep -q 'MAX_CONTACTS != 100' src/helpers/BaseChatMesh.h || { echo "::error::straznik MAX_CONTACTS znikl z BaseChatMesh.h"; exit 1; }
           grep -q 'MAX_CONTACTS != 100' examples/companion_radio/MyMesh.h || { echo "::error::straznik MAX_CONTACTS znikl z MyMesh.h"; exit 1; }
+
+      # Flagi laboratoryjne nie maja prawa wejsc do envow wydania (Codex F-15):
+      # kazda z nich zdejmuje jakas obrone (otwarty AP, hasla w logu, surowe
+      # probki RNG). Dodaje sie je RECZNIE na stole (--build-flag), nigdy w
+      # pliku. (Autostart okna to od 20.08 zachowanie produkcyjne, nie flaga.)
+      - name: No lab flags in release environments
+        run: |
+          if grep -nE '^\s*-D\s*(BIPER_AP_OPEN|BIPER_DEBUG_SECRETS|BIPER_RNG_SAMPLES)' variants/biper_ap/platformio.ini; then
+            echo "::error::flaga laboratoryjna wpisana w env wydania"; exit 1
+          fi
+
+      # Czysta logika warstwy Biper (prawda doreczen po znaczniku, podtrzymanie
+      # okna) + regresja upstreamowego KISS modemu. Upstreamowy env `native`
+      # stoi na brakujacych deklaracjach atol/atoi w ConfigSerializer.cpp —
+      # identycznie na czystym upstreamie (ograniczenie odziedziczone).
+      - name: Host tests
+        run: pio test -e native_biper_faces -e native_kiss_modem --without-uploading
+
+  stock-c6l:
+    # Biper zmienia pliki WSPOLNE (examples/companion_radio, src/Mesh.cpp,
+    # src/Dispatcher.cpp, wariant m5stack_unit_c6l z TCXO 3,0 V). Bez tego
+    # joba zmiana wspolna mogla przejsc bez sygnalu kompilacji dla stockowych
+    # profili BLE/USB (Codex F-07). Zachowanie RADIA po tych zmianach to
+    # nadal osobny gate fizyczny — kompilator go nie mierzy.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build stock C6L BLE + USB
+        run: pio run -e M5Stack_Unit_C6L_companion_radio_ble -e M5Stack_Unit_C6L_companion_radio_usb
 
   readme-facts:
     # The README states numbers and tells the reader to verify them. This job is

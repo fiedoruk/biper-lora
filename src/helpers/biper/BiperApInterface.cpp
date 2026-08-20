@@ -75,10 +75,20 @@ static volatile int biper_ws_fd = -1;
 
 int biper_ws_fd_get() { return biper_ws_fd; }
 
+// Zaleglosci RX starego telefonu plucze KONSUMENT (petla mesh) — checkRecvFrame
+// widzi te flage przy najblizszym przebiegu. Zerowanie ogona z zadania httpd
+// lamaloby kontrakt SPSC (audyt Codexa F-06/F-10). Okno miedzy ustawieniem
+// flagi a jej konsumpcja to pojedyncze milisekundy — pierwsza ramka nowego
+// klienta przychodzi pozniej, niz petla mesh zdazy splukac stare.
+static volatile bool biper_rx_flush_req = false;
+
 void biper_ws_session_open(httpd_handle_t hd, int fd) {
   // Ring TX zerowany na progu sesji: po takeover ramki zakolejkowane dla
-  // STAREGO telefonu wysylaly sie do nowego (audyt Kimi B-05.1).
+  // STAREGO telefonu wysylaly sie do nowego (audyt Kimi B-05.1). Rozkazy
+  // starego telefonu czekajace w RX takze nie moga wykonac sie na koncie
+  // nowej sesji (audyt Codexa F-06) — stad zlecenie plukania.
   biper_iface.dropTxQueue();
+  biper_rx_flush_req = true;
   biper_ws_hd = hd;
   biper_ws_fd = fd;
   Serial.printf("[BIPER_WS] client connected fd=%d\n", fd);
@@ -104,6 +114,13 @@ static volatile uint32_t biper_rx_dropped = 0;
 uint32_t biper_ws_rx_dropped() { return biper_rx_dropped; }
 uint32_t biper_ws_rx_count() { return biper_rx_frames; }
 uint32_t biper_ws_tx_count() { return biper_tx_frames; }
+
+// Kiedy klient OSTATNIO odezwal sie po WS. Okno hotspotu odswieza sie tylko
+// przy zywym panelu, nie przy samym skojarzeniu stacji Wi-Fi — zapamietany
+// laptop w kieszeni nie moze trzymac AP w nieskonczonosc (audyt Codexa F-04).
+// Panel podtrzymuje sie sam pulsem GET_BATT co minute.
+static volatile uint32_t biper_ws_last_rx = 0;
+uint32_t biper_ws_last_rx_millis() { return biper_ws_last_rx; }
 
 static volatile bool biper_msg_flag = false;
 bool biper_msg_waiting() { return biper_msg_flag; }
@@ -151,11 +168,13 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   // refresh a stale sender once, which self-corrects within one window.
   else if (src[0] == RESP_DM_OLD && len >= 7) note_advert(&src[1]);
   else if (src[0] == RESP_DM_V3 && len >= 10) note_advert(&src[4]);
-  // State for the cube's screen. The guard (is this a consequence of OUR
-  // transmission, and does a confirmation exist at all for this kind of send)
-  // sits in biper_face_set() — here we only report what we saw in the frame.
-  else if (src[0] == PUSH_CONFIRMED) biper_face_set(FACE_DOSZLO);
-  else if (src[0] == RESP_SENT) biper_face_set(FACE_CZEKAM);
+  // State for the cube's screen. Delivery truth is matched BY TAG: RESP_SENT
+  // carries a 4-byte expected-ack marker (offset 2) and PUSH_CONFIRMED carries
+  // the same marker (offset 1). A confirmation that matches no awaited tag —
+  // late, duplicated or belonging to another interface — must not light DOSZLO
+  // on the screen (audyt Codexa F-03/F-19; ten sam mechanizm co w panelu).
+  else if (src[0] == PUSH_CONFIRMED) biper_face_confirmed(len >= 5 ? &src[1] : nullptr);
+  else if (src[0] == RESP_SENT) biper_face_resp_sent(len >= 6 ? &src[2] : nullptr);
   if (biper_ws_fd < 0 || biper_ws_hd == nullptr) return len;  // no client: observed, not deliverable
   if (isWriteBusy()) return 0;
   Frame& f = _tx[_tx_head];
@@ -189,6 +208,7 @@ void BiperApInterface::drainTx() {
 
 bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
   if (!_enabled || len == 0 || len > MAX_FRAME_SIZE) return false;
+  biper_ws_last_rx = millis();  // zywy panel, nie sama stacja (F-04)
   const uint8_t next = nextSlot(_rx_head);
   if (next == _rx_tail) { biper_rx_dropped = biper_rx_dropped + 1; return false; }  // ring full
   // The user pressed SEND: this is the only moment when we know about a
@@ -204,9 +224,15 @@ bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
   memcpy(f.buf, payload, len);
   _rx_head = next;
   biper_rx_frames = biper_rx_frames + 1;
+  // Ten return BYL nieobecny, a funkcja deklaruje bool — przy globalnym `-w`
+  // kompilator milczal i wynik byl przypadkiem z rejestru (audyt Codexa F-01).
+  // WIPE z przycisku dziala tylko dzieki temu, ze ta wartosc jest prawdziwa.
+  return true;
 }
 
 size_t BiperApInterface::checkRecvFrame(uint8_t dest[]) {
+  // Plukanie po takeover — z wlasciwej strony ringu (konsument; patrz F-06).
+  if (biper_rx_flush_req) { biper_rx_flush_req = false; _rx_tail = _rx_head; }
   if (_rx_tail == _rx_head) return 0;
   Frame& f = _rx[_rx_tail];
   size_t len = f.len;

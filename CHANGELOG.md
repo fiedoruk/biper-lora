@@ -9,6 +9,73 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.20 — 2026-08-20 — the second external audit: state truth and recovery
+
+A second independent full-tree audit (Codex) confirmed nine P1 findings —
+every one verified against this tree before a line changed. All six logic
+findings land here; the audit's own words for the theme: the cube must never
+claim more than it knows. Two owner decisions from the live desk test land
+with it:
+
+- **The hotspot window opens by itself at power-on** (owner decision, 20.08,
+  reversing the 18.08 "panic ritual" doctrine). The panel is the cube's only
+  interface — without the window you cannot connect at all, and manually
+  arming the core path before every use proved to be friction, not safety.
+  The lab flag `BIPER_AP_AUTOSTART` became production behaviour and is gone.
+  Privacy and power keep their guard: without a live panel the window still
+  closes after 10 minutes, and the 3-second hold reopens it.
+- **The wipe countdown arms at 6 s, not 4 s** (owner-reported live
+  regression). v0.8.19 grew the hotspot hold to exactly 3 s but left the
+  wipe threshold at 4 s — one second of human margin, and "hold about three
+  seconds" ended on the WYMAŻ screen every other try. The dead zone is now
+  3–6 s, and an uninterrupted press that does reach the countdown UNDOES the
+  window toggle it fired at second three — an aborted wipe leaves the cube
+  exactly as it was before the whole gesture.
+
+- **Delivery truth is now matched by tag (F-03/F-19).** `RESP_SENT` carries a
+  4-byte marker of the expected confirmation; the screen registers it and
+  `DOSZLO` lights up only when `PUSH_CONFIRMED` hits a live marker. A late
+  (60 s+), duplicated or foreign confirmation no longer changes the screen.
+  The matching logic is pure C++ (`BiperLogic.h`) with 11 host tests.
+- **A missing `return true` in the frame-accept path (F-01).** The function
+  returned garbage from a register; the button-wipe path worked by accident.
+  The global `-w` that silenced it is now stripped from the Biper
+  environments and a missing return is a compile error (`-Werror=return-type`).
+- **The 10-second wipe gesture works without a working OLED (F-02).** The
+  fallback loop only knew HOLD/DOUBLE/TRIPLE; a dead display stole the one
+  local way to erase the cube. The countdown is now audible (a click every
+  second, a melody confirms acceptance).
+- **A remembered station no longer holds the hotspot open forever (F-04).**
+  The window is held by a LIVE panel — an open WebSocket that spoke within
+  the last 3 minutes; the panel pulses once a minute. A phone that fell
+  asleep stops holding the window; a person at the panel still keeps it open
+  all night (the 19.08 owner decision stands in spirit).
+- **A full inbound queue answers instead of losing commands silently
+  (F-05).** The WebSocket handler now tells the panel "busy" (0xB5) and the
+  panel says it out loud. No blind auto-retry: the reply does not identify
+  which frame was dropped, and re-sending a message that DID enter would
+  duplicate it.
+- **Phone takeover flushes the old session's pending commands (F-06).** Only
+  the TX ring was cleared; a command queued by the previous phone could
+  execute on the new session's watch. The RX ring is now flushed from the
+  consumer side on takeover.
+- Hardening from the same audit: the stored hotspot password must be exactly
+  8 characters (F-12); a failed URI registration aborts the window start
+  instead of serving a half-dead panel (F-13); task-creation failures are
+  logged instead of vanishing (F-14); changing the Wi-Fi word mid-window no
+  longer relabels the live network — the new name is answered as
+  next-window and the OLED keeps showing the network that is actually on
+  air (F-11).
+- CI grows three gates (F-07/F-15): stock C6L BLE/USB builds (Biper touches
+  shared files — TCXO 3.0 V among them), host tests
+  (`native_biper_faces` + `native_kiss_modem`), and a release-flag gate that
+  refuses lab flags (`BIPER_AP_OPEN`, `BIPER_DEBUG_SECRETS`,
+  `BIPER_RNG_SAMPLES`, `BIPER_AP_AUTOSTART`) in shipped environments.
+- Correction to the v0.8.19 notes below: the shipped filesystem partition is
+  **1 MB**, not 7.9 MB — SPIFFS above ~2 MB formatted for minutes after the
+  first erase and the boot looked hung, so the partition was shrunk before
+  the release was cut. The remaining flash stays free for the future.
+
 ## v0.8.19 — 2026-08-21 — four owner decisions land: the law, the promise, the future
 
 - **A hard legal airtime limit (owner decision F-03).** The airtime budget
@@ -27,7 +94,9 @@ Nothing yet.
 - **16 MB and an OTA-ready partition table (F-04).** The stock board
   definition pretended 4 MB and huge_app burned OTA away forever; the cube
   physically carries 16 MB. New board manifest + two 4 MB app slots +
-  a 7.9 MB filesystem. The OTA update mechanism itself is a future vector —
+  a 1 MB filesystem (corrected 2026-08-20; this entry previously said
+  7.9 MB, but SPIFFS that large formatted for minutes and the shipped
+  table was already cut to 1 MB). The OTA update mechanism itself is a future vector —
   this table merely stops forbidding it. **Installing this version requires
   a full erase** (the web installer does one anyway): the partition map
   moved, so identities and contacts start fresh.

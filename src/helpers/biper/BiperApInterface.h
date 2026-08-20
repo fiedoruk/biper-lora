@@ -63,6 +63,9 @@ int biper_ws_fd_get();  // -1 when no client is connected
 // Frame counters behind the [BIPER_WS] telemetry line.
 uint32_t biper_ws_rx_count();
 uint32_t biper_ws_tx_count();
+// millis() ostatniej ramki OD klienta — okno AP odswieza sie tylko przy zywym
+// panelu, nie przy samym skojarzeniu stacji (audyt Codexa F-04).
+uint32_t biper_ws_last_rx_millis();
 
 // New-message signal for the OLED faces. The interface reports isConnected()
 // while enabled, so upstream sends the PUSH 0x83 "message waiting" tickle even

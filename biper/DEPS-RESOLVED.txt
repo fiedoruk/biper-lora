@@ -1,0 +1,46 @@
+# Zaleznosci rozwiazane do dokladnych wersji — audyt Codexa F-17.
+# Migawka z dzialajacego builda (pio pkg list), odtworzenie: pio pkg list -e Biper_AP_C6L_spike
+# Data: 2026-08-20, commit w naglowku CHANGELOG. Czysty cache moze rozwiazac
+# zakresy ^/@~ do nowszych wersji — to jest zapis stanu ZMIERZONEGO, nie lock.
+
+Resolving Biper_AP_C6L_spike dependencies...
+Platform espressif32 @ 53.3.13 (required: https://github.com/pioarduino/platform-espressif32/releases/download/53.03.13-1/platform-espressif32.zip)
+├── framework-arduinoespressif32 @ 3.1.3 (required: https://github.com/espressif/arduino-esp32/releases/download/3.1.3/esp32-3.1.3.zip)
+├── framework-arduinoespressif32-libs @ 5.3.0+sha.489d7a2b3a (required: https://github.com/espressif/esp32-arduino-lib-builder/releases/download/idf-release_v5.3/esp32-arduino-libs-idf-release_v5.3-489d7a2b-v1.zip)
+├── tool-esptoolpy @ 4.8.6 (required: https://github.com/pioarduino/esptool/releases/download/v4.8.6/esptool.zip)
+├── tool-mklittlefs @ 3.2.0 (required: tasmota/tool-mklittlefs @ ^3.2.0)
+├── tool-riscv32-esp-elf-gdb @ 14.2.0+20240403 (required: platformio/tool-riscv32-esp-elf-gdb @ 14.2.0+20240403)
+├── tool-xtensa-esp-elf-gdb @ 14.2.0+20240403 (required: platformio/tool-xtensa-esp-elf-gdb @ 14.2.0+20240403)
+└── toolchain-riscv32-esp @ 13.2.0+20240530 (required: platformio/toolchain-riscv32-esp @ 13.2.0+20240530)
+
+Libraries
+├── Adafruit AHTX0 @ 2.0.6 (required: adafruit/Adafruit AHTX0 @ ^2.0.5)
+│   ├── Adafruit BusIO @ 1.17.4 (required: Adafruit BusIO)
+│   ├── Adafruit SH110X @ 2.1.15 (required: Adafruit SH110X)
+│   │   └── Adafruit GFX Library @ 1.12.6 (required: Adafruit GFX Library)
+│   └── Adafruit Unified Sensor @ 1.1.15 (required: Adafruit Unified Sensor)
+├── Adafruit BME280 Library @ 2.3.0 (required: adafruit/Adafruit BME280 Library @ ^2.3.0)
+├── Adafruit BME680 Library @ 2.0.6 (required: adafruit/Adafruit BME680 Library @ ^2.0.4)
+│   ├── Adafruit SSD1306 @ 2.5.17 (required: Adafruit SSD1306)
+├── Adafruit BMP085 Library @ 1.2.4 (required: adafruit/Adafruit BMP085 Library @ ^1.2.4)
+├── Adafruit BMP280 Library @ 2.6.8 (required: adafruit/Adafruit BMP280 Library @ ^2.6.8)
+├── Adafruit INA219 @ 1.2.3 (required: adafruit/Adafruit INA219 @ ^1.2.3)
+│   ├── Adafruit NeoPixel @ 1.15.5 (required: Adafruit NeoPixel)
+├── Adafruit INA260 Library @ 1.5.3 (required: adafruit/Adafruit INA260 Library @ ^1.5.3)
+├── Adafruit INA3221 Library @ 1.0.1 (required: adafruit/Adafruit INA3221 Library @ ^1.0.1)
+├── Adafruit MLX90614 Library @ 2.1.6 (required: adafruit/Adafruit MLX90614 Library @ ^2.1.5)
+├── Adafruit SHTC3 Library @ 1.0.2 (required: adafruit/Adafruit SHTC3 Library @ ^1.0.1)
+├── Adafruit_VL53L0X @ 1.2.5 (required: adafruit/Adafruit_VL53L0X @ ^1.2.4)
+├── Arduino_LPS22HB @ 1.0.2 (required: arduino-libraries/Arduino_LPS22HB @ ^1.0.2)
+├── CayenneLPP @ 1.6.1 (required: electroniccats/CayenneLPP @ 1.6.1)
+│   └── ArduinoJson @ 7.4.3 (required: bblanchon/ArduinoJson @ *)
+├── Crypto @ 0.4.0 (required: rweather/Crypto @ ^0.4.0)
+├── INA226 @ 0.6.6 (required: robtillaart/INA226 @ ^0.6.4)
+├── Melopero RV3028 @ 1.2.0 (required: melopero/Melopero RV3028 @ ^1.1.0)
+├── MicroNMEA @ 2.0.6 (required: stevemarple/MicroNMEA @ ^2.0.6)
+├── NonBlockingRTTTL @ 1.4.0 (required: end2endzone/NonBlockingRTTTL @ ^1.3.0)
+├── RTClib @ 2.1.4 (required: adafruit/RTClib @ ^2.1.3)
+├── RadioLib @ 7.7.1+sha.6d8934836 (required: git+https://github.com/jgromes/RadioLib.git#6d8934836678d8894e3d556550475b37dce3e2b6)
+├── Sensirion I2C SHT4x @ 1.1.2 (required: sensirion/Sensirion I2C SHT4x @ ^1.1.2)
+│   └── Sensirion Core @ 0.7.3 (required: Sensirion Core)
+└── base64 @ 1.4.0 (required: densaugeo/base64 @ ~1.4.0)

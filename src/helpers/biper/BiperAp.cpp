@@ -4,6 +4,7 @@
 
 #include "BiperAp.h"
 #include "BiperApInterface.h"
+#include "BiperLogic.h"
 #include "BiperScreen.h"
 #include "BiperVersion.h"
 
@@ -18,10 +19,12 @@
 #include <esp_http_server.h>
 #include <unistd.h>
 
-// B1-lite: AP is a panic ritual, not an always-on service. The AP task is a
-// persistent state machine: idle until a toggle request (button hold, or boot
-// when BIPER_AP_AUTOSTART is set for bench testing), then a 10-minute window;
-// a second toggle closes the window early.
+// The AP task is a persistent state machine: a window opens at boot (owner
+// decision 20.08.2026 — the panel is the cube's ONLY interface, so the network
+// has to be there the moment the cube is) and on a button hold; without a live
+// panel it closes after 10 minutes, and a second toggle closes it early.
+// (The pre-20.08 doctrine "panic ritual, not always-on" lost to practice:
+// manually arming the core path before every use was friction, not safety.)
 //
 // HTTP+WS run on esp_http_server (IDF, Apache-2.0, own task) — one port 80
 // for the pages, the captive probes and the panel WebSocket bridge.
@@ -29,6 +32,11 @@
 #ifndef BIPER_AP_WINDOW_MS
 #define BIPER_AP_WINDOW_MS (10UL * 60UL * 1000UL)
 #endif
+
+// Jak swiezo musi odzywac sie panel, zeby podtrzymywac okno hotspotu (F-04).
+// Panel pulsuje GET_BATT co ~60 s; trzy minuty ciszy = telefon uspiony albo
+// gniazdo martwe — wtedy startuje zwykle 10-minutowe odliczanie.
+static const uint32_t BIPER_WS_ACTIVITY_MS = 3UL * 60UL * 1000UL;
 
 // Load-bearing: let upstream setup() finish (mesh, BLE, radio) before the WiFi
 // stack is touched.
@@ -76,6 +84,7 @@ static const char BIPER_AP_IP_STR[] = "192.168.4.1";
 static bool from_the_cube(httpd_req_t* req);
 static void security_headers(httpd_req_t* req);
 static void biper_ssid_refresh();
+static void biper_ssid_compute(char* out, size_t out_len);
 
 static Preferences biper_nvs;
 // The stored key stays "siec" ("network"): it is on flash in every cube already
@@ -380,10 +389,14 @@ static esp_err_t nazwa_post(httpd_req_t* req) {
     }
     biper_nvs.putString(NVS_WORD, buf);
   }
-  biper_ssid_refresh();
+  // Zywego stanu NIE dotykamy: softAP nadaje stara nazwe do konca okna,
+  // a OLED i panel maja pokazywac te, ktora jest w powietrzu (Codex F-11).
+  // Odpowiadamy nazwa OD NASTEPNEGO OKNA — panel tak ja opisuje.
+  char next_ssid[sizeof(biper_state.ssid)];
+  biper_ssid_compute(next_ssid, sizeof(next_ssid));
   Serial.printf("[BIPER_AP] wifi word %s\n", len == 0 ? "reset" : "set");
   httpd_resp_set_type(req, "text/plain; charset=utf-8");
-  return httpd_resp_send(req, biper_state.ssid, HTTPD_RESP_USE_STRLEN);
+  return httpd_resp_send(req, next_ssid, HTTPD_RESP_USE_STRLEN);
 }
 
 // Captive probes: a redirect makes Android/Windows pop the sign-in sheet.
@@ -469,7 +482,18 @@ static esp_err_t ws_handler(httpd_req_t* req) {
     if (httpd_ws_recv_frame(req, &f, f.len) != ESP_OK) return ESP_FAIL;
   }
   if (f.type == HTTPD_WS_TYPE_BINARY && f.len > 0) {
-    biper_ap_interface()->onClientFrame(ws_buf, f.len);
+    if (!biper_ap_interface()->onClientFrame(ws_buf, f.len)) {
+      // Pelny ring RX gubil rozkaz PO CICHU — WYSLIJ znikalo bez sladu dla
+      // panelu (audyt Codexa F-05). Krotka odpowiedz 0xB5 (spoza kodow
+      // companion) mowi panelowi: zajete, sprobuj ponownie. Jestesmy w tasku
+      // httpd, wiec wolno odpowiedziec synchronicznie.
+      static const uint8_t BUSY[] = {0xB5};
+      httpd_ws_frame_t r = {};
+      r.type = HTTPD_WS_TYPE_BINARY;
+      r.payload = (uint8_t*)BUSY;
+      r.len = sizeof(BUSY);
+      httpd_ws_send_frame(req, &r);
+    }
   } else if (f.type == HTTPD_WS_TYPE_CLOSE) {
     biper_ws_session_close();
   }
@@ -516,7 +540,16 @@ static bool biper_httpd_start() {
       {"/connecttest.txt", HTTP_GET, redirect_get, nullptr, false, false, nullptr},
       {"/*", HTTP_GET, page_get, nullptr, false, false, nullptr},  // catch-all
   };
-  for (auto& u : uris) httpd_register_uri_handler(biper_httpd, &u);
+  // Niedorejestrowany handler to strona, ktora "jest", ale odpowiada 404 —
+  // start okna z takim brakiem ma sie nie udac W CALOSCI, wtedy zadziala
+  // istniejaca sciezka martwego startu i okno zamknie sie od razu (Codex F-13).
+  for (auto& u : uris)
+    if (httpd_register_uri_handler(biper_httpd, &u) != ESP_OK) {
+      Serial.printf("[BIPER_AP] uri register FAILED: %s\n", u.uri);
+      httpd_stop(biper_httpd);
+      biper_httpd = nullptr;
+      return false;
+    }
   return true;
 }
 
@@ -533,13 +566,13 @@ static void biper_httpd_stop() {
 // or an empty POST /nazwa returns the cube to its drawn word. Recomputed at
 // every window open, so a change applies from the NEXT window without
 // dropping the current guests mid-session.
-static void biper_ssid_refresh() {
+static void biper_ssid_compute(char* out, size_t out_len) {
   char wybor[8] = {0};
   const size_t wl = biper_nvs.getString(NVS_WORD, wybor, sizeof(wybor));
   bool ok = wl >= 2 && wl <= 4;
   for (size_t i = 0; ok && i < wl; i++) ok = wybor[i] >= 'A' && wybor[i] <= 'Z';
   if (ok) {
-    snprintf(biper_state.ssid, sizeof(biper_state.ssid), "Biper-%s", wybor);
+    snprintf(out, out_len, "Biper-%s", wybor);
     return;
   }
   // The cube introduces itself with a WORD, not hex (owner decision, 19 Aug:
@@ -603,8 +636,15 @@ static void biper_ssid_refresh() {
   };
   const uint64_t mac = ESP.getEfuseMac();
   const uint16_t fold = (uint16_t)(mac ^ (mac >> 16) ^ (mac >> 32) ^ (mac >> 48));
-  snprintf(biper_state.ssid, sizeof(biper_state.ssid), "Biper-%s",
+  snprintf(out, out_len, "Biper-%s",
            NAME_WORDS[fold % (sizeof(NAME_WORDS) / sizeof(NAME_WORDS[0]))]);
+}
+
+// Zywy stan TYLKO na progu okna: w biegu `biper_state.ssid` jest nazwa sieci,
+// ktora softAP wlasnie NADAJE — podmiana w locie klamala na OLED i w panelu,
+// pokazujac siec, ktorej nie ma w powietrzu (audyt Codexa F-11).
+static void biper_ssid_refresh() {
+  biper_ssid_compute(biper_state.ssid, sizeof(biper_state.ssid));
 }
 
 // ---------------------------------------------------------------------------
@@ -650,7 +690,8 @@ static void biper_ap_window() {
   // Self-heal: a password stored by an older release may contain the dropped
   // characters — draw a fresh one so what the screen shows is always typeable.
   bool ok_pass = biper_nvs.getString(NVS_PASS, biper_state.pass, sizeof(biper_state.pass)) != 0 &&
-                 biper_state.pass[0] != 0;
+                 strlen(biper_state.pass) == 8;  // dokladnie 8 — krotszy zapis
+                 // (uciety, cudzy) to slabsze haslo bez ostrzezenia (Codex F-12)
   for (const char* c = biper_state.pass; ok_pass && *c; c++)
     if (strchr(ALF, *c) == nullptr) ok_pass = false;
   if (!ok_pass) {
@@ -714,7 +755,15 @@ static void biper_ap_window() {
 
     const uint8_t guests = (uint8_t)WiFi.softAPgetStationNum();
     biper_state.guests = guests;
-    if (guests > 0) idle_since = now;
+    // Okno podtrzymuje ZYWY PANEL, nie sama skojarzona stacja: zapamietany
+    // laptop w zasiegu trzymal AP w nieskonczonosc, a uspiony telefon zostawal
+    // "gosciem" na zawsze (audyt Codexa F-04). Duch decyzji z 19.08 zostaje:
+    // sesja przy panelu nie jest ucinana w trakcie uzycia — panel pulsuje po
+    // WS co minute, wiec czlowiek z otwartym panelem odswieza okno caly czas,
+    // takze noca. Kto zniknal z panelu, temu odliczanie rusza od nowa.
+    if (biper_window_keepalive(guests, biper_ws_fd_get(), now,
+                               biper_ws_last_rx_millis(), BIPER_WS_ACTIVITY_MS))
+      idle_since = now;
     if (now - idle_since >= BIPER_AP_WINDOW_MS) break;
     biper_state.window_left_s = (uint16_t)((BIPER_AP_WINDOW_MS - (now - idle_since)) / 1000UL);
 
@@ -867,11 +916,15 @@ void biper_ap_setup(NodePrefs* prefs, MultiSerialInterface* manager) {
   // ~10 s after a cold plug on 17.08 — suspicion: brownout during first
   // RF calibration when WiFi comes up. ESP_RST_BROWNOUT would confirm.)
   Serial.printf("[BIPER] reset_reason=%d\n", (int)esp_reset_reason());
-#ifdef BIPER_AP_AUTOSTART
+  // Decyzja wlasciciela (20.08.2026, odwraca doktryne z 18.08): okno hotspotu
+  // otwiera sie SAMO po kazdym wlaczeniu zasilania. Panel jest jedynym
+  // interfejsem kostki — bez okna nie da sie z nia w ogole polaczyc, a rytual
+  // 3 s przed kazdym uzyciem okazal sie tarciem w rdzeniu produktu ("po co
+  // mam recznie aktywowac, jak to jest core"). Prywatnosc i energia dalej
+  // maja straznika: okno bez zywego panelu gasnie po 10 minutach (F-04),
+  // a gest 3 s otwiera je ponownie. Dawna flaga laboratoryjna
+  // BIPER_AP_AUTOSTART stala sie zachowaniem produkcyjnym i znikla.
   const bool autostart = true;
-#else
-  const bool autostart = false;
-#endif
 
   // Biper doctrine (owner, 17.08.2026): a cube assumes NO infrastructure around,
   // so packet forwarding is ON from boot. RAM-only, re-applied every boot.
@@ -949,7 +1002,11 @@ void biper_ap_setup(NodePrefs* prefs, MultiSerialInterface* manager) {
   Serial.printf("[BIPER] Biper-AP layer v" BIPER_LAYER_VERSION ", ssid=%s autostart=%d\n",
                 biper_state.ssid, (int)autostart);
   if (autostart) biper_toggle_req = true;
-  xTaskCreate(biper_ap_task, "biper_ap", 12288, nullptr, 1, nullptr);
+  // Bez tego zadania gest 3 s nigdy nie otworzy okna — porazka alokacji ma
+  // krzyczec w logu, nie znikac (Codex F-14). Mesh dziala dalej.
+  if (xTaskCreate(biper_ap_task, "biper_ap", 12288, nullptr, 1, nullptr) != pdPASS)
+    Serial.printf("[BIPER_AP] task create FAILED, heap=%lu\n",
+                  (unsigned long)ESP.getFreeHeap());
 }
 
 #endif  // BIPER_AP
