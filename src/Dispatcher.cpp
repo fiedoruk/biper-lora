@@ -149,6 +149,7 @@ void Dispatcher::loop() {
 bool Dispatcher::tryParsePacket(Packet* pkt, const uint8_t* raw, int len) {
   int i = 0;
 
+  if (len < 1) return false;  // BIPER: len-gate
   pkt->header = raw[i++];
   if (pkt->getPayloadVer() > PAYLOAD_VER_1) {
     MESH_DEBUG_PRINTLN("%s Dispatcher::checkRecv(): unsupported packet version", getLogDateTime());
@@ -156,6 +157,7 @@ bool Dispatcher::tryParsePacket(Packet* pkt, const uint8_t* raw, int len) {
   }
 
   if (pkt->hasTransportCodes()) {
+    if (len < i + 4) return false;  // BIPER: len-gate (2x2 B kodow transportu)
     memcpy(&pkt->transport_codes[0], &raw[i], 2); i += 2;
     memcpy(&pkt->transport_codes[1], &raw[i], 2); i += 2;
   } else {

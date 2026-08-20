@@ -7,7 +7,7 @@ replaces the upstream policy, which promised a process we do not run.
 
 ## What state this project is in
 
-There is no tagged release in this repository. A v0.6 build is distributed through the web installer at [esp32ai.me/biper](https://esp32ai.me/biper/) with its SHA-256 published there — report issues against that hash. The approved-release manifest
+There is no tagged release in this repository. The current build is distributed through the web installer at [esp32ai.me/biper](https://esp32ai.me/biper/) with its SHA-256 published there — report issues against that hash. The approved-release manifest
 ships with an empty artifact on purpose, and nothing here is recommended for
 use where somebody's safety depends on it. Treat the code as work in the open,
 not as a product you can deploy.

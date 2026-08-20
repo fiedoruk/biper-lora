@@ -686,7 +686,7 @@ You can get the epoch time on <https://www.epochconverter.com> and use it to set
 **A:** Make sure that you flashed the Bluetooth companion firmware and not the USB-only companion firmware.
 
 ### 6.5. Q: I can't connect via Bluetooth, what is the Bluetooth pairing code?
-**A:** The default Bluetooth pairing code is `123456`
+**A:** The default Bluetooth pairing code is `123456` (Biper fork: the PIN is per-session, shown on the cube's INFO screen only inside the pairing window — `123456` is never active)
 
 ### 6.6. Q: My Heltec V3 keeps disconnecting from my smartphone. It can't hold a solid Bluetooth connection.
 **A:** Heltec V3 has a very small coil antenna on its PCB for Wi-Fi and Bluetooth connectivity. It has a very short range, only a few feet. It is possible to remove the coil antenna and replace it with a 31mm wire. The BT range is much improved with the modification.

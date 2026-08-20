@@ -1,4 +1,5 @@
 #include "MyMesh.h"
+#include <helpers/UTF8Helpers.h>
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
@@ -450,10 +451,13 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
     memcpy(&out_frame[i], extra, extra_len);
     i += extra_len;
   }
-  int tlen = strlen(text); // TODO: UTF-8 ??
+  int tlen = strlen(text);
   if (i + tlen > MAX_FRAME_SIZE) {
     tlen = MAX_FRAME_SIZE - i;
   }
+  // BIPER: ciecie po BAJCIE zostawialo pol znaku UTF-8 (krzaczek w panelu);
+  // helper istnial, nikt go tu nie wolal (audyt Kimi B-10).
+  tlen = (int)mesh::validUtf8PrefixLength(text, (size_t)tlen);
   memcpy(&out_frame[i], text, tlen);
   i += tlen;
   addToOfflineQueue(out_frame, i);
@@ -561,10 +565,13 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   out_frame[i++] = TXT_TYPE_PLAIN;
   memcpy(&out_frame[i], &timestamp, 4);
   i += 4;
-  int tlen = strlen(text); // TODO: UTF-8 ??
+  int tlen = strlen(text);
   if (i + tlen > MAX_FRAME_SIZE) {
     tlen = MAX_FRAME_SIZE - i;
   }
+  // BIPER: ciecie po BAJCIE zostawialo pol znaku UTF-8 (krzaczek w panelu);
+  // helper istnial, nikt go tu nie wolal (audyt Kimi B-10).
+  tlen = (int)mesh::validUtf8PrefixLength(text, (size_t)tlen);
   memcpy(&out_frame[i], text, tlen);
   i += tlen;
   addToOfflineQueue(out_frame, i);
@@ -677,7 +684,7 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
   uint32_t tag;
   memcpy(&tag, data, 4);
 
-  if (pending_login && memcmp(&pending_login, contact.id.pub_key, 4) == 0) { // check for login response
+  if (pending_login && len >= 13 && memcmp(&pending_login, contact.id.pub_key, 4) == 0) { // check for login response (BIPER: len-gate, galaz czyta data[4..12])
     // yes, is response to pending sendLogin()
     pending_login = 0;
 
@@ -730,6 +737,7 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     out_frame[i++] = 0; // reserved
     memcpy(&out_frame[i], contact.id.pub_key, 6);
     i += 6; // pub_key_prefix
+    if (len - 4 > (int)sizeof(out_frame) - i) return;  // BIPER: len-gate (do 7 B poza out_frame)
     memcpy(&out_frame[i], &data[4], len - 4);
     i += (len - 4);
     _serial->writeFrame(out_frame, i);
@@ -741,6 +749,7 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     out_frame[i++] = 0; // reserved
     memcpy(&out_frame[i], &tag, 4);   // app needs to match this to RESP_CODE_SENT.tag
     i += 4;
+    if (len - 4 > (int)sizeof(out_frame) - i) return;  // BIPER: len-gate
     memcpy(&out_frame[i], &data[4], len - 4);
     i += (len - 4);
     _serial->writeFrame(out_frame, i);
@@ -866,7 +875,16 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _iter_started = false;
   _cli_rescue = false;
   offline_queue_len = 0;
+#ifdef BIPER_AP
+  // 3, nie 0: format ramek wiadomosci (7/8 vs 16/17) jest wybierany przy
+  // KOLEJKOWANIU wg wersji klienta, a jedynym klientem Bipera jest panel
+  // mowiacy V3. Z zerem kazdy DM odebrany miedzy bootem a pierwszym
+  // otwarciem panelu ladowal w kolejce w starym formacie i panel go po
+  // cichu wyrzucal (audyt Kimi B-12.6).
+  app_target_ver = 3;
+#else
   app_target_ver = 0;
+#endif
   clearPendingReqs();
   next_ack_idx = 0;
   sign_data = NULL;
@@ -1128,7 +1146,7 @@ void MyMesh::handleCmdFrame(size_t len) {
                         ? ERR_CODE_NOT_FOUND
                         : ERR_CODE_UNSUPPORTED_CMD); // unknown recipient, or unsupported TXT_TYPE_*
     }
-  } else if (cmd_frame[0] == CMD_SEND_CHANNEL_TXT_MSG) { // send GroupChannel text msg
+  } else if (cmd_frame[0] == CMD_SEND_CHANNEL_TXT_MSG && len >= 8) { // send GroupChannel text msg (BIPER: len-gate, ujemny text_len szedl do memcpy jako ogromny size_t)
     int i = 1;
     uint8_t txt_type = cmd_frame[i++]; // should be TXT_TYPE_PLAIN
     uint8_t channel_idx = cmd_frame[i++];
@@ -1278,7 +1296,11 @@ void MyMesh::handleCmdFrame(size_t len) {
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // unknown contact
     }
-  } else if (cmd_frame[0] == CMD_ADD_UPDATE_CONTACT && len >= 1 + 32 + 2 + 1) {
+  // BIPER: prog na PELNY rekord obowiazkowy (updateContactFromFrame czyta
+  // bezwarunkowo do 1+32+3+MAX_PATH_SIZE+32+4 B) — przy starym progu 36 B
+  // reszta pol pochodzila z bajtow POPRZEDNIEJ ramki w statycznym buforze.
+  } else if (cmd_frame[0] == CMD_ADD_UPDATE_CONTACT
+             && len >= 1 + PUB_KEY_SIZE + 3 + MAX_PATH_SIZE + 32 + 4) {
     uint8_t *pub_key = &cmd_frame[1];
     ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
     uint32_t last_mod = getRTCClock()->getCurrentTime();  // fallback value if not present in cmd_frame

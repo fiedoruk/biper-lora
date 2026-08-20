@@ -9,6 +9,52 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.18 — 2026-08-20 — the hardening pass: an external audit, verified line by line
+
+An independent 36-area audit (Kimi K3) of the whole fork, executed with a
+falsifier on every claim — three findings were REJECTED against evidence
+(0x8A really does mean a new contact on this tree; production already gzips;
+the portal sitemap already carries our routes) and the rest verified in code
+before touching anything. What went in:
+
+- **TCXO fed 3.0 V, as the vendor schematic demands.** The radio oscillator
+  (X1G0041310042) is powered from the SX1262's DIO3 pin and the M5Stack
+  schematic annotates it "VDD: 3.0V"; we compiled 1.8 V. The desk pair never
+  noticed — range measurement before/after is still open (E-02).
+- **"WYMAZUJE" finally has all its letters.** The 4×7 screen font lacked
+  U, W and Y, so the one irreversible operation showed " MAZ JE". Glyphs
+  added on both sides of the C↔JS pixel gate, and the gate now compares the
+  font TABLES literally — frame comparison alone could never catch glyphs
+  no animation state uses.
+- **Messages received before the panel's first visit survive.** The frame
+  format was chosen at QUEUE time by the client's declared version, which is
+  zero until a client connects — so early messages were queued in the old
+  dialect the panel silently drops. The Biper build now defaults to V3.
+- **Frame length gates** on the paths that read past the declared length:
+  channel-send, contact responses, login responses, TRACE packets, advert
+  parsing, transport codes, full-record contact updates. All minimal fork
+  insertions, marked BIPER, candidates for upstream PRs.
+- **Compile-time geometry guard.** Losing `-D MAX_CONTACTS=100` once compiled
+  one class with two memory layouts (the 19.08 pair failure). The guard sits
+  in BaseChatMesh.h — the header whose default of 32 is the wrong one — so a
+  lost flag now fails the build with a message instead of failing the pair.
+  CI also gained a VERSION↔header gate and wider build triggers.
+- **HMI never dies with the screen**: button and feedback initialize before
+  and independently of the OLED. Mode toasts became non-blocking states —
+  an 800 ms vTaskDelay used to eat clicks and freeze the LED. The wipe frame
+  is retried and reported instead of silently dropped on a full ring; a
+  failed AP start closes the window instead of spinning ten empty minutes.
+- **UTF-8-safe truncation** at all three text cut points (the helper existed,
+  nothing called it); WS rejects fragmented frames and shortens the receive
+  timeout; a session takeover clears the TX ring (the new phone no longer
+  receives frames queued for the old one); dropped client frames are counted.
+- Hygiene: dead code out, stale comments fixed, the "TYLKO SWOJE" toast no
+  longer overflows 64 px, the LED is written only on change, release.sh now
+  writes a tracked `.sha256.txt` manifest next to each (untracked) binary,
+  and internal audit dossiers are ignored so they can never reach the public
+  mirror again. Panel component v0.15 (import limit now matches the
+  transport's 174-byte reality instead of promising 250).
+
 ## v0.8.17 — 2026-08-20 — the message carries proof of its journey
 
 The close of the UX vector. Panel component v0.14:

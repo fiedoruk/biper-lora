@@ -10,12 +10,13 @@ on:
   push:
     branches: ['**']
     paths:
-      - 'src/helpers/biper/**'
+      - 'src/**'
       - 'variants/biper_ap/**'
       - 'variants/m5stack_unit_c6l/**'
-      - 'biper/app/**'
+      - 'biper/**'
       - 'fonts/**'
-      - 'examples/companion_radio/main.cpp'
+      - 'examples/companion_radio/**'
+      - 'platformio.ini'
       - '.github/workflows/biper-build.yml'
   pull_request:
   workflow_dispatch:
@@ -52,8 +53,25 @@ jobs:
           git diff --exit-code -- src/helpers/biper/BiperFontAsset.h \
             || { echo "::error::BiperFontAsset.h is stale — run python3 biper/app/gen-fonts.py"; exit 1; }
 
+      # Push z rozjechanymi wersjami przechodzil CI — bramka zyla tylko
+      # lokalnie w release.sh (audyt Kimi A-14.2).
+      - name: VERSION and banner header agree
+        run: |
+          v="$(tr -d '[:space:]' < biper/VERSION)"
+          b="$(sed -n 's/.*BIPER_LAYER_VERSION "\(.*\)".*/\1/p' src/helpers/biper/BiperVersion.h)"
+          [ "$v" = "$b" ] || { echo "::error::biper/VERSION=$v vs BiperVersion.h=$b"; exit 1; }
+
       - name: Build both environments
         run: pio run -e Biper_AP_C6L_spike -e Biper_AP_C6L_wifi_only
+
+      # Straznik semantyki flag: -U przenoszone przez PlatformIO za -D skasowalo
+      # kiedys MAX_CONTACTS w polowie jednostek kompilacji (awaria pary 19.08).
+      # Dzis pilnuja tego #error w naglowkach (A-09); ten krok pilnuje, zeby
+      # ktos nie wycial samych straznikow.
+      - name: Flag guards still present
+        run: |
+          grep -q 'MAX_CONTACTS != 100' src/helpers/BaseChatMesh.h || { echo "::error::straznik MAX_CONTACTS znikl z BaseChatMesh.h"; exit 1; }
+          grep -q 'MAX_CONTACTS != 100' examples/companion_radio/MyMesh.h || { echo "::error::straznik MAX_CONTACTS znikl z MyMesh.h"; exit 1; }
 
   readme-facts:
     # The README states numbers and tells the reader to verify them. This job is

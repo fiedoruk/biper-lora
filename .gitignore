@@ -17,4 +17,11 @@ compile_commands.json
 .venv/
 venv/
 platformio.local.ini
-biper/releases/
+biper/releases/*
+
+# Manifesty wydan SA sledzone (binarki nie — patrz komentarz wyzej)
+!biper/releases/*.sha256.txt
+# Raporty warsztatowe audytow NIGDY do repo (drzewo idzie 1:1 do publicznego
+# lustra biper-lora — PUBLIKACJA.md: warsztat zostaje w domu)
+raport-kimi-*.md
+mega-audyt-*.md

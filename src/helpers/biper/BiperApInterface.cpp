@@ -70,12 +70,15 @@ BiperApInterface* biper_ap_interface() { return &biper_iface; }
 
 // Session state for the single WS client. Opened/closed from the httpd task
 // by the handlers in BiperAp.cpp, read from the mesh loop — hence volatile fd.
-static httpd_handle_t biper_ws_hd = nullptr;
+static httpd_handle_t volatile biper_ws_hd = nullptr;  // pisany z httpd, czytany z mesh — volatile jak fd
 static volatile int biper_ws_fd = -1;
 
 int biper_ws_fd_get() { return biper_ws_fd; }
 
 void biper_ws_session_open(httpd_handle_t hd, int fd) {
+  // Ring TX zerowany na progu sesji: po takeover ramki zakolejkowane dla
+  // STAREGO telefonu wysylaly sie do nowego (audyt Kimi B-05.1).
+  biper_iface.dropTxQueue();
   biper_ws_hd = hd;
   biper_ws_fd = fd;
   Serial.printf("[BIPER_WS] client connected fd=%d\n", fd);
@@ -95,6 +98,10 @@ void biper_ws_session_close() {
 // Telemetry only; the AP window prints them on the [BIPER_WS] line.
 static volatile uint32_t biper_rx_frames = 0;
 static volatile uint32_t biper_tx_frames = 0;
+// Ramki KLIENTA odrzucone przez pelny ring RX — po WYSLIJ bez reakcji to
+// jedyny slad, ze rozkaz w ogole nie wszedl (audyt Kimi B-05.4).
+static volatile uint32_t biper_rx_dropped = 0;
+uint32_t biper_ws_rx_dropped() { return biper_rx_dropped; }
 uint32_t biper_ws_rx_count() { return biper_rx_frames; }
 uint32_t biper_ws_tx_count() { return biper_tx_frames; }
 
@@ -156,7 +163,9 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   memcpy(f.buf, src, len);
   _tx_head = nextSlot(_tx_head);
   // Marshal the actual socket write into the httpd task context.
-  httpd_queue_work(biper_ws_hd, [](void*) { biper_iface.drainTx(); }, nullptr);
+  if (httpd_queue_work(biper_ws_hd, [](void*) { biper_iface.drainTx(); }, nullptr) != ESP_OK) {
+    biper_ws_session_close();  // pelna kolejka httpd: inaczej most milczy do restartu (Kimi B-05.3)
+  }
   return len;
 }
 
@@ -178,10 +187,10 @@ void BiperApInterface::drainTx() {
   }
 }
 
-void BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
-  if (!_enabled || len == 0 || len > MAX_FRAME_SIZE) return;
+bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
+  if (!_enabled || len == 0 || len > MAX_FRAME_SIZE) return false;
   const uint8_t next = nextSlot(_rx_head);
-  if (next == _rx_tail) return;  // ring full: drop (client can resend)
+  if (next == _rx_tail) { biper_rx_dropped = biper_rx_dropped + 1; return false; }  // ring full
   // The user pressed SEND: this is the only moment when we know about a
   // transmission before the radio answers. A public channel gets no delivery
   // confirmation, so after RESP_SENT it goes back to ZYJE instead of getting

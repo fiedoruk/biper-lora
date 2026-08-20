@@ -36,14 +36,15 @@
     _extra1 = _extra2 = 0;
   
     int i = 1;
-    if (_flags & ADV_LATLON_MASK) {
+    // BIPER: len-gate per pole — uciety advert wpisywal smieciowe wspolrzedne
+    if ((_flags & ADV_LATLON_MASK) && i + 8 <= app_data_len) {
       memcpy(&_lat, &app_data[i], 4); i += 4;
       memcpy(&_lon, &app_data[i], 4); i += 4;
     }
-    if (_flags & ADV_FEAT1_MASK) {
+    if ((_flags & ADV_FEAT1_MASK) && i + 2 <= app_data_len) {
       memcpy(&_extra1, &app_data[i], 2); i += 2;
     }
-    if (_flags & ADV_FEAT2_MASK) {
+    if ((_flags & ADV_FEAT2_MASK) && i + 2 <= app_data_len) {
       memcpy(&_extra2, &app_data[i], 2); i += 2;
     }
 

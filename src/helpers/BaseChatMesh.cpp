@@ -1,4 +1,5 @@
 #include <helpers/BaseChatMesh.h>
+#include <helpers/UTF8Helpers.h>
 #include <Utils.h>
 
 #ifndef SERVER_RESPONSE_DELAY
@@ -504,6 +505,7 @@ bool BaseChatMesh::sendGroupMessage(uint32_t timestamp, mesh::GroupChannel& chan
   int prefix_len = ep - (char *) &temp[5];
 
   if (text_len + prefix_len > MAX_TEXT_LEN) text_len = MAX_TEXT_LEN - prefix_len;
+  text_len = (int)mesh::validUtf8PrefixLength(text, (size_t)text_len);  // BIPER: nie tniemy w srodku znaku
   memcpy(ep, text, text_len);
   ep[text_len] = 0;  // null terminator
 

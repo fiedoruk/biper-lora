@@ -1333,7 +1333,7 @@ function odczytajStan(){
       $("f-wifi").value=String(d.ssid).replace(/^Biper-/,"");
     /* Wersja z KOSTKI, nie z pliku panelu: przy kilku kostkach i kilku
        wydaniach dziennie czlowiek musi widziec, ktory system tu dziala. */
-    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.14 / K5";
+    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.15 / K5";
   }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
 }
 
@@ -1576,7 +1576,7 @@ $("b-import").onclick=function(){
   if(!m){flashLabel(self,tr("prof_zly"),"b_import");return}
   var bytes;
   try{bytes=zB64(m[1])}catch(_){flashLabel(self,tr("prof_zly"),"b_import");return}
-  if(bytes.length<99||bytes.length>250){flashLabel(self,tr("prof_zly"),"b_import");return}
+  if(bytes.length<99||bytes.length>174){flashLabel(self,tr("prof_zly"),"b_import");return} /* 174: MAX_FRAME_SIZE=176 minus [18]+dlugosc — walidacja 250 przepuszczala kody, ktorych transport i tak by ucial (Kimi B-12.1) */
   var f=new Uint8Array(1+bytes.length);f[0]=CMD.IMPORT;f.set(bytes,1);
   czekamNaImport=true;
   ws.send(f)};
@@ -1614,7 +1614,7 @@ $("f-lang").onchange=function(){ustawJezyk(this.value)};
   if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
   if(j!==lang)ustawJezyk(j);
 })();
-$("ver").textContent="Biper panel v0.14 / K5 \u00b7 OS: \u2014";
+$("ver").textContent="Biper panel v0.15 / K5 \u00b7 OS: \u2014";
 /* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
    UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
    przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja

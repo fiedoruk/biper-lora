@@ -1,3 +1,7 @@
+> **This is Biper** — a product fork of MeshCore for the M5Stack Unit C6L.
+> The fork's own README, status and evidence live in [.github/README.md](.github/README.md);
+> everything below is the upstream MeshCore README, kept as-is.
+
 ## About MeshCore
 
 MeshCore is a lightweight, portable C++ library that enables multi-hop packet routing for embedded projects using LoRa and other packet radios. It is designed for developers who want to create resilient, decentralized communication networks that work without the internet.

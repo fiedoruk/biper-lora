@@ -56,7 +56,6 @@ static const uint32_t BIPER_NINJA_WAKE_MS = 4000;
 // one button.
 static const uint32_t BIPER_WIPE_FROM_MS = 4000;
 static const uint32_t BIPER_WIPE_MS = 10000;
-static const uint32_t BIPER_SCR_SPLASH_MS = 2200;     // wordmark after the anim
 static const uint32_t BIPER_SCR_REFRESH_MS = 1000;    // static-page refresh
 static const uint32_t BIPER_SCR_TOAST_MS = 800;       // mode-change confirmation
 
@@ -313,7 +312,10 @@ static void envelope() {
 // 64 px at scale 2 and run together into a blot.
 // ---------------------------------------------------------------------------
 static const uint8_t FONT_W = 4, FONT_H = 7;
-static const char FONT_CHARS[] = "ABCDEIJKLMNOPRSZ ";
+// U, W, Y doszly 20.08: napis "WYMAZUJE" (jedyna nieodwracalna operacja!)
+// rysowal sie jako " MAZ JE", bo brakujace glify spadaly na spacje, a bramka
+// pikselowa C<->JS liczy zgodnosc generatorow, nie obecnosc liter (audyt).
+static const char FONT_CHARS[] = "ABCDEIJKLMNOPRSZUWY ";
 static const uint8_t FONT[][FONT_H] = {
   {0x6,0x9,0x9,0xF,0x9,0x9,0x9}, {0xE,0x9,0x9,0xE,0x9,0x9,0xE},
   {0x7,0x8,0x8,0x8,0x8,0x8,0x7}, {0xE,0x9,0x9,0x9,0x9,0x9,0xE},
@@ -323,6 +325,9 @@ static const uint8_t FONT[][FONT_H] = {
   {0x9,0xD,0xD,0xB,0xB,0x9,0x9}, {0x6,0x9,0x9,0x9,0x9,0x9,0x6},
   {0xE,0x9,0x9,0xE,0x8,0x8,0x8}, {0xE,0x9,0x9,0xE,0xA,0x9,0x9},
   {0x7,0x8,0x8,0x6,0x1,0x1,0xE}, {0xF,0x1,0x2,0x4,0x8,0x8,0xF},
+  {0x9,0x9,0x9,0x9,0x9,0x9,0x6},  // U
+  {0x9,0x9,0x9,0x9,0xF,0xF,0x9},  // W (odwrocone M)
+  {0x9,0x9,0x9,0x6,0x6,0x6,0x6},  // Y (ramiona zbiegaja w dwie srodkowe)
   {0x0,0x0,0x0,0x0,0x0,0x0,0x0},  // space
 };
 static int glyph_index(char c) {
@@ -535,7 +540,6 @@ static void draw_network_page() {
 // only this page) spells SLYSZE without its diacritic.
 uint16_t biper_batt_mv();
 uint8_t biper_heard_15min();
-const NodePrefs* biper_prefs();
 
 static void draw_info_page() {
   const BiperApState& st = biper_ap_get_state();
@@ -615,6 +619,10 @@ static void ninja_panel(bool on) {
   scr->ssd1306_command(on ? SSD1306_DISPLAYON : SSD1306_DISPLAYOFF);
 }
 
+static uint32_t toast_until = 0;         // 0 = brak toastu
+static bool toast_clear_wake = false;
+static bool toast_restore_ninja = false;
+
 static void toggle_ninja_mode() {
   const bool on = !biper_ninja();
   biper_set_ninja(on);
@@ -626,9 +634,11 @@ static void toggle_ninja_mode() {
   draw_centered(20, on ? "NINJA" : "NINJA OFF");
   scr->display();
   Serial.printf("[BIPER] ninja=%d\n", (int)on);
-  vTaskDelay(pdMS_TO_TICKS(BIPER_SCR_TOAST_MS));
-  ninja_wake_until = 0;
-  if (on) ninja_panel(false);
+  // Toast jako STAN z deadlinem, nie vTaskDelay: 800 ms blokady zjadalo
+  // klikniecia (oba zbocza miedzy pollingami) i mrozilo feedback (Kimi A-11).
+  toast_until = millis() + BIPER_SCR_TOAST_MS;
+  toast_clear_wake = true;
+  toast_restore_ninja = on;
 }
 
 // Forwarding other people's packets: SIEC <-> SAM, by triple click.
@@ -644,10 +654,12 @@ static void toggle_forwarding() {
   scr->clearDisplay();
   scr->setTextSize(1);
   draw_centered(12, forwarding ? "SIEC" : "SAM");
-  draw_centered(30, forwarding ? "PRZEKAZUJE" : "TYLKO SWOJE");
+  // "SWOJE", nie "TYLKO SWOJE": 11 znakow x 6 px = 66 px > 64 px ekranu,
+  // draw_centered ucina krawedzie bez zadnego bledu (audyt Kimi B-13.7).
+  draw_centered(30, forwarding ? "PRZEKAZUJE" : "SWOJE");
   scr->display();
-  vTaskDelay(pdMS_TO_TICKS(BIPER_SCR_TOAST_MS));
-  if (biper_ninja()) ninja_panel(false);
+  toast_until = millis() + BIPER_SCR_TOAST_MS;   // patrz toggle_ninja_mode
+  toast_restore_ninja = biper_ninja();
 }
 
 // Any button press in ninja mode lights the panel for BIPER_NINJA_WAKE_MS.
@@ -679,13 +691,30 @@ static void wipe_everything() {
   // screen task then fell back to normal pages for a moment before the reboot
   // hit — the owner read it as "it said wiping, then changed its mind". The
   // `wiping` latch keeps the wipe animation on screen until the lights go out.
-  wiping = true;
   Serial.printf("[BIPER] wipe requested from button\n");
+  // Ramka NAJPIERW, zatrzask POTEM: pelny ring RX odrzuca ramke po cichu,
+  // a zatrzask `wiping` trzymalby ekran "WYMAZUJE" na zawsze przy
+  // nietknietych danych (audyt Kimi A-12). Ring drenuje petla mesh co
+  // przebieg, wiec kilka krotkich prob wystarcza za caly backoff.
+  bool sent = false;
+  for (int i = 0; i < 8 && !sent; i++) {
+    sent = biper_ap_interface()->onClientFrame(FRAME, sizeof(FRAME));
+    if (!sent) vTaskDelay(pdMS_TO_TICKS(25));
+  }
+  if (!sent) {
+    scr->clearDisplay();
+    scr->setTextSize(1);
+    draw_centered(14, "ZAJETE");
+    draw_centered(26, "SPROBUJ ZNOWU");
+    scr->display();
+    toast_until = millis() + BIPER_SCR_TOAST_MS;
+    return;
+  }
+  wiping = true;
   // MeshCore's factory reset knows nothing about our storage (the SIEC/SAM
   // bit, the fixed hotspot password) — we clear it ourselves, so a wiped cube
   // really does come up like new.
   biper_ap_forget();
-  biper_ap_interface()->onClientFrame(FRAME, sizeof(FRAME));
 }
 
 // Draws the countdown; returns true when the wipe has to happen.
@@ -733,14 +762,27 @@ static bool screen_init() {
 static void biper_screen_task(void*) {
   vTaskDelay(pdMS_TO_TICKS(BIPER_SCR_BOOT_DELAY_MS));
 
-  if (!screen_init()) {
-    vTaskDelete(NULL);
-    return;
-  }
-
+  // Przycisk i feedback PRZED ekranem i niezaleznie od jego wyniku: padnieta
+  // tasma OLED odbierala kostce cale HMI (gesty hotspotu, ninja, wymazania,
+  // buzzer, LED), choc ekspander i buzzer to osobny sprzet, a mesh i hotspot
+  // dzialaja dalej (audyt Kimi A-07).
   const bool button_ok = biper_button_init();
   biper_feedback_init();
   biper_feedback_boot();
+
+  if (!screen_init()) {
+    // Bez ekranu petla dalej obsluguje przycisk i feedback — tylko nie rysuje.
+    for (;;) {
+      if (button_ok) {
+        const BiperButtonEvent ev = biper_button_poll();
+        if (ev == BIPER_BTN_HOLD) { biper_feedback_gesture(); biper_ap_request_toggle(); }
+        else if (ev == BIPER_BTN_DOUBLE) biper_set_ninja(!biper_ninja());
+        else if (ev == BIPER_BTN_TRIPLE) { biper_feedback_gesture(); biper_forwarding_toggle(); }
+      }
+      biper_feedback_tick(biper_ap_get_state().active, millis());
+      vTaskDelay(pdMS_TO_TICKS(BIPER_SCR_TICK_MS));
+    }
+  }
   // Boot goes straight into the living face — no intro animation (owner's call).
 
   uint32_t last_draw = 0;
@@ -755,6 +797,7 @@ static void biper_screen_task(void*) {
       draw_radial_field(millis(), 2);
       label_on_field("WYMAZUJE", SSD1306_WHITE);
       scr->display();
+      biper_feedback_tick(false, millis());   // melodia/LED zyja do konca
       vTaskDelay(pdMS_TO_TICKS(BIPER_SCR_TICK_MS));
       continue;
     }
@@ -784,6 +827,9 @@ static void biper_screen_task(void*) {
       if (held_ms >= BIPER_WIPE_FROM_MS) {
         ninja_panel(true);          // the countdown must show in ninja too
         if (wipe_countdown(held_ms)) { wipe_everything(); continue; }
+        // Tick feedbacku takze w odliczaniu: bez niego LED i melodia
+        // zamieraly na cale 6 s trzymania przycisku (Kimi A-11).
+        biper_feedback_tick(biper_ap_get_state().active, millis());
         vTaskDelay(pdMS_TO_TICKS(BIPER_SCR_TICK_MS));
         continue;                   // the countdown outranks drawing pages
       }
@@ -829,6 +875,19 @@ static void biper_screen_task(void*) {
     biper_feedback_tick(st.active, now);
 
     biper_face_expire(now);
+
+    // Toast trzyma ekran, ale NIE wstrzymuje przycisku ani feedbacku —
+    // wszystko powyzej w tej iteracji juz sie wykonalo.
+    if (toast_until) {
+      if ((int32_t)(now - toast_until) < 0) {
+        vTaskDelay(pdMS_TO_TICKS(BIPER_SCR_TICK_MS));
+        continue;
+      }
+      toast_until = 0;
+      if (toast_clear_wake) { toast_clear_wake = false; ninja_wake_until = 0; }
+      if (toast_restore_ninja) { toast_restore_ninja = false; ninja_panel(false); }
+      redraw_now = true;
+    }
 
     // Animated pages redraw every tick (~30 fps); static ones at 1 Hz.
     if (redraw_now || page_is_animated() || now - last_draw >= BIPER_SCR_REFRESH_MS) {

@@ -41,9 +41,15 @@ public:
   size_t checkRecvFrame(uint8_t dest[]) override;
 
   // Called from the httpd task (WS handler / close callback).
-  void onClientFrame(const uint8_t* payload, size_t len);
+  // true = ramka przyjeta do ringu; false = pelny ring/oversize (odrzucona).
+  // Panel ignoruje wynik (klient moze ponowic), ale WIPE z przycisku musi go
+  // znac: cicho zgubiona ramka kasowania zostawialaby ekran 'WYMAZUJE' na
+  // zawsze przy nietknietych danych (audyt Kimi A-12).
+  bool onClientFrame(const uint8_t* payload, size_t len);
   void drainTx();  // runs inside httpd context via httpd_queue_work
   void resetQueues();
+  // Zeruje SAM ring TX — na progu przejecia sesji (patrz biper_ws_session_open).
+  void dropTxQueue() { _tx_head = _tx_tail = 0; }
 };
 
 BiperApInterface* biper_ap_interface();

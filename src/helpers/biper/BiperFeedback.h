@@ -29,7 +29,7 @@ void biper_feedback_ap_off();
 void biper_feedback_guest();
 void biper_feedback_msg();  // a message is waiting on the cube
 
-// Advance melodies + LED animation. Call every screen tick (~40 ms).
+// Advance melodies + LED animation. Call every screen tick (~33 ms, BIPER_SCR_TICK_MS).
 void biper_feedback_tick(bool ap_active, uint32_t now);
 
 // Ninja mode (double click): no sound, no LED at all; the screen dims

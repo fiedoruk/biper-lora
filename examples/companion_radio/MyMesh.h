@@ -59,6 +59,23 @@
 #define MAX_CONTACTS 100
 #endif
 
+#ifdef BIPER_AP
+// Straznik geometrii (audyt Kimi A-09): defaulty naglowkow sa rozjechane
+// (BaseChatMesh.h=32, tu=100) i jedyna prawda jest -D z INI. 19.08 utrata
+// flagi przez kolejnosc -U/-D skompilowala JEDNA klase w DWOCH ukladach
+// pamieci — sciezka radiowa pisala kontakty tam, gdzie panel nie patrzyl.
+// Gdy flaga znowu zginie, ma polec kompilacja, nie para kostek.
+#if MAX_CONTACTS != 100
+#error "Biper wymaga -D MAX_CONTACTS=100 (zrodlo prawdy: variants/biper_ap/platformio.ini)"
+#endif
+#if defined(P_LORA_TX_LED)
+#error "P_LORA_TX_LED ma byc zbite -U w INI: pin 15 to RST wyswietlacza, nie LED"
+#endif
+#if defined(ENABLE_PRIVATE_KEY_EXPORT) || defined(ENABLE_PRIVATE_KEY_IMPORT)
+#error "Eksport/import klucza prywatnego ma byc zbity -U w INI (tozsamosc jest jednorazowa)"
+#endif
+#endif
+
 #ifndef OFFLINE_QUEUE_SIZE
 #define OFFLINE_QUEUE_SIZE 16
 #endif

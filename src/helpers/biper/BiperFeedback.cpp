@@ -71,6 +71,11 @@ static void melody_tick(uint32_t now) {
 // --- LED ---
 
 static void led(uint8_t r, uint8_t g, uint8_t b) {
+  // Zapis TYLKO przy zmianie: neopixelWrite co tick (~30 Hz) to zbedny czas
+  // CPU i RMT takze wtedy, gdy kolor stoi w miejscu (audyt Kimi B-13.12).
+  static uint8_t lr = 255, lg = 255, lb = 255;
+  if (r == lr && g == lg && b == lb) return;
+  lr = r; lg = g; lb = b;
   neopixelWrite(BIPER_PIN_RGB, r, g, b);
 }
 

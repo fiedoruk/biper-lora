@@ -40,6 +40,7 @@ int Mesh::searchChannelsByHash(const uint8_t* hash, GroupChannel channels[], int
 
 DispatcherAction Mesh::onRecvPacket(Packet* pkt) {
   if (pkt->isRouteDirect() && pkt->getPayloadType() == PAYLOAD_TYPE_TRACE) {
+    if (pkt->payload_len < 9) return ACTION_RELEASE;  // BIPER: len-gate (tag4+auth4+flags1)
     if (pkt->path_len < MAX_PATH_SIZE) {
       uint8_t i = 0;
       uint32_t trace_tag;

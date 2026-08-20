@@ -51,6 +51,11 @@ mkdir -p "$(dirname "$OUT")"
 
 SUM="$(shasum -a 256 "$OUT" | cut -d' ' -f1)"
 BYTES="$(wc -c < "$OUT" | tr -d ' ')"
+# Manifest wydania OBOK binarki — binarka jest ignorowana w git (decyzja
+# wlasciciela w toku, F-05/A-01), manifest z SHA-256 i commitem jest sledzony:
+# repo zna kazde wydanie po skrocie, nawet gdy plik mieszka poza gitem.
+printf '%s  %s\n%s bytes, commit %s, env %s\n' \
+  "$SUM" "$(basename "$OUT")" "$BYTES" "$COMMIT_SHA" "$ENV" > "$OUT.sha256.txt"
 echo "OK  $(basename "$OUT")"
 echo "    bytes  : $BYTES"
 echo "    sha256 : $SUM"

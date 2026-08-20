@@ -37,6 +37,13 @@ public:
 #ifndef MAX_CONTACTS
   #define MAX_CONTACTS  32
 #endif
+// BIPER (minimalna wstawka forka): TEN naglowek ma default 32, MyMesh.h ma
+// 100 — jedyna prawda to -D z INI. Straznik stoi wlasnie tu, bo zgubiona
+// flaga w MyMesh.h daje 100 (cisza), a tu 32 — i wtedy jedna klasa
+// kompilowala sie w dwoch ukladach pamieci (awaria pary 19.08).
+#if defined(BIPER_AP) && MAX_CONTACTS != 100
+  #error "Biper wymaga -D MAX_CONTACTS=100 (variants/biper_ap/platformio.ini); default 32 = rozjazd geometrii"
+#endif
 
 #define MAX_ANON_CONTACTS  8
 

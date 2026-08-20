@@ -461,6 +461,9 @@ static esp_err_t ws_handler(httpd_req_t* req) {
   // Two-step read: max_len 0 fills type/len only, then we supply the buffer.
   if (httpd_ws_recv_frame(req, &f, 0) != ESP_OK) return ESP_FAIL;
   if (f.len > MAX_FRAME_SIZE) return ESP_FAIL;  // oversize: drop connection
+  // Fragment WS bylby oddany jako KOMPLETNA ramka protokolu (przegladarki
+  // malych ramek nie fragmentuja, ale kontrakt ma byc szczelny — Kimi B-04a).
+  if (f.fragmented) return ESP_FAIL;
   if (f.len > 0) {
     f.payload = ws_buf;
     if (httpd_ws_recv_frame(req, &f, f.len) != ESP_OK) return ESP_FAIL;
@@ -484,6 +487,9 @@ static bool biper_httpd_start() {
   cfg.uri_match_fn = httpd_uri_match_wildcard;
   cfg.close_fn = on_sock_close;
   cfg.lru_purge_enable = true;
+  // 2 s zamiast domyslnych 5: httpd to jeden task, a telefon zasypiajacy
+  // w POLOWIE ramki mrozil caly panel na pelny timeout odbioru (Kimi B-04b).
+  cfg.recv_wait_timeout = 2;
   if (httpd_start(&biper_httpd, &cfg) != ESP_OK) return false;
 
   // Fields in order: uri, method, handler, user_ctx, is_websocket,
@@ -547,7 +553,7 @@ static void biper_ssid_refresh() {
   //
   // Words are 3-4 letters for a reason: 64 px of OLED show ten 6-px glyphs,
   // so "Biper-" plus four letters is the longest SSID the screen can carry
-  // without touching the drawing code (and its pixel-parity gate). With ~150
+  // without touching the drawing code (and its pixel-parity gate). With 294
   // words two cubes of one batch can still draw the same name (<1%); if that
   // ever bites, the fix is a second word, not digits.
   static const char* const NAME_WORDS[] = {
@@ -679,6 +685,9 @@ static void biper_ap_window() {
                 biper_state.pass[0] ? "(set, shown on screen)" : "(open)");
 #endif
 
+  // Martwy start (padly softAP albo httpd) nie kreci pelnych 10 minut na
+  // niczym — okno zamyka sie od razu, ekran wraca do stanu spoczynku
+  // (audyt Kimi B-13.10).
   uint32_t last_log = 0;
   // The countdown runs only while the cube is ALONE (owner decision 19.08):
   // a session at the panel is never cut mid-use. Every tick with a guest
@@ -692,6 +701,12 @@ static void biper_ap_window() {
     if (biper_toggle_req) {  // second gesture: close the window early
       biper_toggle_req = false;
       Serial.printf("[BIPER_AP] toggle: closing early\n");
+      break;
+    }
+    // Martwy start (padly softAP albo httpd): nie krecimy 10 minut pustego
+    // okna na ekranie, ktory klamie (Kimi B-13.10).
+    if (!biper_state.active) {
+      Serial.printf("[BIPER_AP] start failed — closing window\n");
       break;
     }
 
@@ -808,7 +823,6 @@ static void biper_ap_task(void*) {
 // The prefs pointer already reaches us in setup — we keep it so the screen can
 // show the radio preset without any new hook.
 static NodePrefs* biper_prefs_ref = nullptr;
-const NodePrefs* biper_prefs() { return biper_prefs_ref; }
 
 // ── THE SIEC/SAM CHOICE SURVIVES A RESTART ───────────────────────────────────
 // The cube has no battery, so a "restart" is a power bank pulled out, a knocked
