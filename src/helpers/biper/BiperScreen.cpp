@@ -111,12 +111,6 @@ static inline bool page_is_face() {
 // out-of-date promise.
 static volatile BiperFace biper_face = FACE_ZYJE;
 static volatile uint32_t biper_face_since = 0;   // millis() of the last change
-// How many of our DM sends still await their RESP_SENT (the moment the tag of
-// the expected confirmation becomes known). int8_t, because the queue depth is
-// small anyway and overflowing upwards is the more dangerous failure here than
-// a lost count: clamped at 8 with room to spare. The wait for the CONFIRMATION
-// itself lives in biper_tags below, matched by tag (audyt Codexa F-03).
-static volatile int8_t biper_face_pending = 0;
 
 // Znaczniki potwierdzen, na ktore NAPRAWDE czekamy. Dotykane wylacznie z petli
 // mesh (writeFrame -> biper_face_resp_sent/confirmed), wiec bez blokad.
@@ -134,25 +128,19 @@ void biper_face_set(BiperFace f) {
   biper_face_since = millis();
   biper_face = f;
 }
-void biper_face_sent(bool expects_confirmation) {
-  if (!expects_confirmation) return;             // shared channel: nothing to wait for
-  if (biper_face_pending < 8) biper_face_pending++;
-}
-
-// RESP_SENT: kostka przyjela wysylke. Dla DM rejestrujemy znacznik i czekamy
-// (CZEKAM); kanal publiczny nie dostaje potwierdzen, wiec wraca do ZYJE.
-// REJESTRACJA tagu jest niezalezna od rysowanej twarzy (rewident, 20.08):
-// przy dwoch szybkich DM-ach drugi RESP_SENT przychodzil, gdy ekran stal juz
-// na CZEKAM — straznik `face==NADAJE` wyrzucal jego znacznik i potwierdzenie
-// drugiej wiadomosci nie mialo w co trafic. Twarz to podglad, nie protokol.
+// RESP_SENT dla DM-a (interfejs rozpoznal to po FIFO oczekiwanych RESP-ow —
+// login/status/telemetria tu NIE trafiaja; kanal publiczny w ogole nie dostaje
+// RESP_SENT i jego NADAJE po prostu wygasa do ZYJE). Rejestracja znacznika
+// jest niezalezna od rysowanej twarzy: przy dwoch szybkich DM-ach drugi RESP
+// przychodzi, gdy ekran stoi juz na CZEKAM, a jego potwierdzenie tez musi miec
+// w co trafic (rewident, 20.08). Twarz to podglad, nie protokol.
 void biper_face_resp_sent(const uint8_t* tag_or_null) {
   const bool nadaje = (biper_face == FACE_NADAJE);
-  if (biper_face_pending > 0 && tag_or_null != nullptr) {
-    biper_face_pending--;
+  if (tag_or_null != nullptr) {
     biper_tags.add(tag_or_null, millis());
     if (nadaje) { biper_face_since = millis(); biper_face = FACE_CZEKAM; }
   } else if (nadaje) {
-    // Kanal publiczny (nic nie czeka na potwierdzenie): wracamy do ZYJE.
+    // RESP bez znacznika: nie ma czego dopasowywac, wiec nie obiecujemy CZEKAM.
     biper_face_since = millis();
     biper_face = FACE_ZYJE;
   }

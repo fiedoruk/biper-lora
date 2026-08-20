@@ -133,12 +133,29 @@ void BiperApInterface::disable() {
 
 void BiperApInterface::resetQueues() {
   if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
+  // Ring LOKALNY zostaje NIETKNIETY: WYMAZ przyjety sekunde przed zamknieciem
+  // okna musi sie wykonac — zerowanie go tutaj zostawialo ekran "WYMAZUJE"
+  // przy zywej tozsamosci (weryfikacja Codexa, 20.08). Rozkazy lokalne nie
+  // naleza do zadnej sesji, wiec zamkniecie okna nie ma nad nimi wladzy.
   _rx_head = _rx_tail = 0;
-  _lo_head = _lo_tail = 0;
   _tx_head = _tx_tail = 0;
-  _rx_flush_req = false;
-  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+  _resp_head = _resp_tail = 0;
+  // Sesja gasnie POD mutexem: writeFrame czyta fd/hd tez pod nim, wiec po
+  // wyjsciu stad zaden queue_work nie poleci na uchwyt, ktory AP zaraz
+  // zwolni w httpd_stop (weryfikacja Kimi, 20.08).
   biper_ws_session_close();
+  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+}
+
+void BiperApInterface::beginSession() {
+  if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
+  _session_gen = (uint8_t)(_session_gen + 1);
+  // Ring TX pelny ramek STAREJ generacji potrafil sie zaklinowac na zawsze:
+  // writeFrame widzial busy i nie zlecal drainTx, a tylko drainTx umial go
+  // oproznic (weryfikacja Kimi, 20.08). Prog nowej sesji zeruje TX — pod
+  // mutexem to legalne, producent (mesh) tez pisze pod nim.
+  _tx_head = _tx_tail = 0;
+  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
 }
 
 // Reported to the mesh, not the socket state: while enabled we always listen,
@@ -178,9 +195,29 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   // late, duplicated or belonging to another interface — must not light DOSZLO
   // on the screen (audyt Codexa F-03/F-19; ten sam mechanizm co w panelu).
   else if (src[0] == PUSH_CONFIRMED) biper_face_confirmed(len >= 5 ? &src[1] : nullptr);
-  else if (src[0] == RESP_SENT) biper_face_resp_sent(len >= 6 ? &src[2] : nullptr);
-  if (biper_ws_fd < 0 || biper_ws_hd == nullptr) return len;  // no client: observed, not deliverable
+  else if (src[0] == RESP_SENT) {
+    // Czyj to RESP? FIFO z onClientFrame mowi, ktora komenda go wywolala —
+    // tylko DM (2) rejestruje znacznik doreczenia; login/status/telemetria
+    // przechodza bez sladu na twarzy (weryfikacja Codexa, 20.08).
+    uint8_t expected = 0;
+    if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
+    if (_resp_tail != _resp_head) {
+      expected = _resp_fifo[_resp_tail];
+      _resp_tail = (uint8_t)((_resp_tail + 1) % 8);
+    }
+    if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+    if (expected == CMD_SEND_DM) biper_face_resp_sent(len >= 6 ? &src[2] : nullptr);
+  }
+  // Odczyt fd/hd, wpis do ringu i queue_work pod JEDNYM przebiegiem mutexa:
+  // zamkniecie okna czysci hd i dopiero POTEM zatrzymuje httpd (tez pod
+  // mutexem), wiec nie zdazymy zawolac queue_work na uchwycie, ktory za
+  // mikrosekunde bedzie zwolniony (TOCTOU — weryfikacja Kimi, 20.08).
   if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
+  const httpd_handle_t hd = biper_ws_hd;
+  if (biper_ws_fd < 0 || hd == nullptr) {
+    if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+    return len;  // no client: observed, not deliverable
+  }
   if (isWriteBusy()) {
     if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
     return 0;
@@ -190,15 +227,19 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   f.gen = _session_gen;  // odpowiedz nalezy do TEJ sesji; po takeover gasnie
   memcpy(f.buf, src, len);
   _tx_head = nextSlot(_tx_head);
-  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
   // Marshal the actual socket write into the httpd task context.
-  if (httpd_queue_work(biper_ws_hd, [](void*) { biper_iface.drainTx(); }, nullptr) != ESP_OK) {
+  const bool queued = httpd_queue_work(hd, [](void*) { biper_iface.drainTx(); }, nullptr) == ESP_OK;
+  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+  if (!queued) {
     biper_ws_session_close();  // pelna kolejka httpd: inaczej most milczy do restartu (Kimi B-05.3)
   }
   return len;
 }
 
 void BiperApInterface::drainTx() {
+  // Pod mutexem: resetQueues z zadania AP zeruje indeksy TX i bez blokady
+  // moglby to zrobic w polowie naszego przebiegu (weryfikacja Codexa, 20.08).
+  if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
   while (_tx_tail != _tx_head) {
     Frame& f = _tx[_tx_tail];
     // Ramka z poprzedniej sesji gasnie tu, zamiast leciec do nowego telefonu.
@@ -215,6 +256,7 @@ void BiperApInterface::drainTx() {
     }
     _tx_tail = nextSlot(_tx_tail);
   }
+  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
 }
 
 bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
@@ -231,15 +273,27 @@ bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
     return false;  // ring full
   }
   // The user pressed SEND: this is the only moment when we know about a
-  // transmission before the radio answers. A public channel gets no delivery
-  // confirmation, so after RESP_SENT it goes back to ZYJE instead of getting
-  // stuck on CZEKAM.
+  // transmission before the radio answers. A public channel gets NO RESP_SENT
+  // at all (MyMesh), so NADAJE simply expires back to ZYJE on its own.
   if (payload[0] == CMD_SEND_DM || payload[0] == CMD_SEND_CHANNEL) {
-    biper_face_sent(payload[0] == CMD_SEND_DM);
     biper_face_set(FACE_NADAJE);
+  }
+  // FIFO oczekiwanych RESP_CODE_SENT: tylko te komendy go dostana (MyMesh);
+  // dzieki temu RESP LOGIN-u nie zuzywa oczekiwania DM-a. Pelne FIFO wypycha
+  // najstarszy wpis — desynchronizacja konczy sie brakiem CZEKAM, nie klamstwem.
+  switch (payload[0]) {
+    case 2: case 26: case 27: case 39: case 52: case 57: {
+      const uint8_t rn = (uint8_t)((_resp_head + 1) % 8);
+      if (rn == _resp_tail) _resp_tail = (uint8_t)((_resp_tail + 1) % 8);
+      _resp_fifo[_resp_head] = payload[0];
+      _resp_head = rn;
+      break;
+    }
+    default: break;
   }
   Frame& f = _rx[_rx_head];
   f.len = (uint16_t)len;
+  f.gen = _session_gen;  // komenda nalezy do TEJ sesji; po takeover jest pomijana
   memcpy(f.buf, payload, len);
   _rx_head = next;
   biper_rx_frames = biper_rx_frames + 1;
@@ -268,7 +322,7 @@ bool BiperApInterface::onLocalCommand(const uint8_t* payload, size_t len) {
 
 size_t BiperApInterface::checkRecvFrame(uint8_t dest[]) {
   if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
-  // Rozkazy LOKALNE (WYMAZ, adverty) przed sesyjnymi — i poza plukaniem.
+  // Rozkazy LOKALNE (WYMAZ, adverty) przed sesyjnymi — i poza generacjami.
   if (_lo_tail != _lo_head) {
     Frame& f = _lo[_lo_tail];
     size_t len = f.len;
@@ -277,14 +331,14 @@ size_t BiperApInterface::checkRecvFrame(uint8_t dest[]) {
     if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
     return len;
   }
-  // Plukanie po takeover — z wlasciwej strony ringu (konsument) i TYLKO do
-  // znacznika przejecia: ramki nowego klienta, ktore weszly po nim, zostaja.
-  // Straz `!= _rx_head` gwarantuje, ze ogon nigdy nie mija glowy (F-06).
-  if (_rx_flush_req) {
-    _rx_flush_req = false;
-    while (_rx_tail != _rx_flush_upto && _rx_tail != _rx_head)
-      _rx_tail = nextSlot(_rx_tail);
-  }
+  // Komendy STAREJ sesji (gen sprzed takeover) sa pomijane w konsumpcji —
+  // to zastapilo plukanie do znacznika: dziala takze wtedy, gdy stara ramka
+  // i ramki nowego klienta leza w ringu przemieszane (audyt Codexa F-06 +
+  // weryfikacja 20.08). Komendy juz POBRANEJ zaden mechanizm nie cofnie —
+  // jej odpowiedz moze dotrzec do nowego telefonu tego samego wlasciciela;
+  // udokumentowane ograniczenie.
+  while (_rx_tail != _rx_head && _rx[_rx_tail].gen != _session_gen)
+    _rx_tail = nextSlot(_rx_tail);
   if (_rx_tail == _rx_head) {
     if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
     return 0;

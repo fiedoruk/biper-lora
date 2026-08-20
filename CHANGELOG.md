@@ -9,6 +9,46 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.23 — 2026-08-20 — the cross-verification pass: two independent reviewers, three closings
+
+Two more independent AI reviews of the fresh tree (one verifying yesterday's
+fixes, one prompted adversarially with pasted sources) converged on the same
+region and were both right. Everything below was re-verified on the desk pair
+before this release was cut.
+
+- **Window close can no longer race the mesh into a freed httpd handle.**
+  `writeFrame` used to check the socket, release the lock, and only then queue
+  work — a window closing in that microsecond handed `httpd_queue_work` a
+  handle about to be freed. The check, the enqueue and the queue-work call now
+  happen under one mutex pass, and the session is cleared under the same
+  mutex before `httpd_stop`.
+- **A TX ring full of a dead session's frames no longer wedges the bridge.**
+  Only `drainTx` could empty the ring, but a full ring meant `writeFrame`
+  never scheduled `drainTx` again. A new session's threshold clears the TX
+  ring outright (legal now — both sides write under the mutex).
+- **Closing the hotspot window no longer discards accepted local commands.**
+  `resetQueues` used to zero the local ring too: a button wipe accepted a
+  second before the window closed would never execute, leaving the screen on
+  WYMAZUJE with a live identity. Local commands belong to no session; the
+  window has no authority over them.
+- **Stale-session commands die by generation, not by flush marker.** Inbound
+  frames carry the session generation; the consumer skips frames from before
+  a takeover even when they sit interleaved with the new client's frames.
+  (A command already picked up by the mesh loop remains a documented
+  limitation — its single response may reach the new phone of the same
+  owner.)
+- **A LOGIN's receipt can no longer impersonate a message receipt.**
+  `RESP_CODE_SENT` answers six different commands (MyMesh), and a shared
+  channel send gets none at all. A small FIFO of expected receipts now tells
+  the screen which command each receipt belongs to — only a direct message
+  registers a delivery marker. The pending counter is gone entirely.
+- **A suppressed advert-reply retries in two seconds** instead of being lost
+  for good when the local ring is momentarily full.
+- **The password alphabet loses V** (owner decision, from a photograph of the
+  live screen: U and V are indistinguishable in the 5×7 font — U stays).
+  22 symbols, 35.7 bits; the existing self-heal redraws any stored password
+  containing V at the next window.
+
 ## v0.8.22 — 2026-08-20 — the adversarial pass: local commands get their own lane
 
 A second adversarial review of the day's changes (independent AI reviewer,

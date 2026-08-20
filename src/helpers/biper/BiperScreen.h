@@ -48,12 +48,10 @@ enum BiperFace {
 // w niego trafic. Spoznione albo cudze potwierdzenie nie zmienia ekranu.
 #if defined(BIPER_AP) && defined(BIPER_SCREEN)
 void biper_face_set(BiperFace f);
-void biper_face_sent(bool expects_confirmation);
 void biper_face_resp_sent(const uint8_t* tag_or_null);   // RESP_SENT z ramki
 void biper_face_confirmed(const uint8_t* tag_or_null);   // PUSH_CONFIRMED z ramki
 #else
 static inline void biper_face_set(BiperFace) {}
-static inline void biper_face_sent(bool) {}
 static inline void biper_face_resp_sent(const uint8_t*) {}
 static inline void biper_face_confirmed(const uint8_t*) {}
 #endif

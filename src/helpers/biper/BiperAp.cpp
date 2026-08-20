@@ -697,8 +697,11 @@ static void biper_ap_window() {
   // renders near-identically: S/5, G/6, B/8, Z/2. The owner typed a password
   // with S and G off the OLED and Android refused it (20.08, bench-verified:
   // the AP itself was fine and another device joined with the stored key).
-  // Both twins of each pair are gone. 23 symbols ^ 8 = 36.2 bits.
-  static const char ALF[] = "ACDEFHJKMNPQRTUVWXY3479";
+  // Both twins of each pair are gone.
+  // V wylecialo tym samym trybem (wlasciciel, 20.08, ze zdjecia ekranu):
+  // U i V sa na 5x7 nie do odroznienia — zostaje U. 22 znaki ^ 8 = 35,7 bita;
+  // samonaprawa nizej przelosuje hasla z V przy najblizszym oknie.
+  static const char ALF[] = "ACDEFHJKMNPQRTUWXY3479";
   // Self-heal: a password stored by an older release may contain the dropped
   // characters — draw a fresh one so what the screen shows is always typeable.
   bool ok_pass = biper_nvs.getString(NVS_PASS, biper_state.pass, sizeof(biper_state.pass)) != 0 &&
@@ -892,7 +895,9 @@ static void biper_advert_tick() {
     // owner's pair (morning after 0.8.10). One minute still prevents storms.
     if (biper_forwarding() && (biper_advert_last_ms == 0 ||
         t_now - biper_advert_last_ms >= BIPER_ADVERT_REPLY_GAP_MS)) {
-      biper_send_advert("reply");
+      // Pelny ring lokalny nie moze zgubic odpowiedzi na ZAWSZE — to jedyna
+      // transmisja domykajaca swieza pare; krotkie ponowienie za 2 s.
+      if (!biper_send_advert("reply")) biper_advert_reply_at = t_now + 2000;
     }
   }
   // Periodic re-advert: heals a missed boot window (the pair problem) and

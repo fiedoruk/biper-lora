@@ -42,12 +42,15 @@ class BiperApInterface : public BaseSerialInterface {
   volatile uint8_t _rx_head = 0, _rx_tail = 0;
   Frame _lo[4];  // rozkazy lokalne (WYMAZ, adverty) — nigdy nie plukane
   volatile uint8_t _lo_head = 0, _lo_tail = 0;
-  // Plukanie po takeover: do ktorego miejsca (F-06) i czy zlecone.
-  volatile uint8_t _rx_flush_upto = 0;
-  volatile bool _rx_flush_req = false;
   volatile uint8_t _session_gen = 0;
   Frame _tx[QUEUE_SIZE];
   volatile uint8_t _tx_head = 0, _tx_tail = 0;
+  // FIFO komend, ktore dostana RESP_CODE_SENT (2/26/27/39/52/57 wg MyMesh.cpp;
+  // kanal 3 NIE dostaje). Bez tego RESP LOGIN-u zuzywal oczekiwanie DM-a
+  // i potwierdzenie wlasciwej wiadomosci nie mialo w co trafic (weryfikacja
+  // Codexa, 20.08). Pod tym samym mutexem co ringi.
+  uint8_t _resp_fifo[8];
+  volatile uint8_t _resp_head = 0, _resp_tail = 0;
 
 public:
   // BaseSerialInterface
@@ -70,11 +73,12 @@ public:
   bool onLocalCommand(const uint8_t* payload, size_t len);
   void drainTx();  // runs inside httpd context via httpd_queue_work
   void resetQueues();
-  // Prog przejecia sesji: nowa generacja (stare TX gasna w drainTx) + plukanie
-  // ringu WS do znacznika. Znacznik miejsca jest konieczny: plukanie
-  // "wszystkiego" zjadalo APP_START nowego klienta, ktory zdazyl wejsc przed
-  // najblizszym przebiegiem petli mesh — iOS wisial wiecznie na LACZE (20.08).
-  void beginSession() { _session_gen = (uint8_t)(_session_gen + 1); _rx_flush_upto = _rx_head; _rx_flush_req = true; }
+  // Prog przejecia sesji: podbija generacje pod mutexem. Ramki RX i TX nosza
+  // generacje z chwili powstania — stare komendy pomija konsument, stare
+  // odpowiedzi gasna w drainTx. Zastepuje dawne plukanie do znacznika
+  // (ktore i tak nie umialo cofnac komendy juz pobranej przez mesh) i nie
+  // dotyka ringu lokalnego.
+  void beginSession();
 };
 
 BiperApInterface* biper_ap_interface();
