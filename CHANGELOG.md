@@ -9,6 +9,29 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.19 — 2026-08-21 — four owner decisions land: the law, the promise, the future
+
+- **A hard legal airtime limit (owner decision F-03).** The airtime budget
+  factor becomes 9.0 in the Biper variant — at most 10% duty, the ETSI limit
+  for the 869.4–869.65 MHz sub-band — enforced in the getter, so neither
+  stored preferences nor the CLI can raise it. The MeshCore default (1.0,
+  i.e. 50%) would let a rescue device break the law exactly when it
+  transmits the most. Real traffic (an SOS every minute ≈ 1.7%) fits with
+  a wide margin. Recorded in specs/regions/pl-eu868.v1.json.
+- **The 3-second gesture is now three seconds (F-01).** The screen, the site
+  and the manual always said "hold for 3 s"; the code fired at 2.5. One
+  constant, zero copy edits, and more head-room after a triple click.
+- **Coding Rate stays 4/5 (F-02)** — community-compatible and cheaper on
+  airtime; 4/8 will be judged against the E-02 range measurement, not
+  guessed. The site already tells the truth.
+- **16 MB and an OTA-ready partition table (F-04).** The stock board
+  definition pretended 4 MB and huge_app burned OTA away forever; the cube
+  physically carries 16 MB. New board manifest + two 4 MB app slots +
+  a 7.9 MB filesystem. The OTA update mechanism itself is a future vector —
+  this table merely stops forbidding it. **Installing this version requires
+  a full erase** (the web installer does one anyway): the partition map
+  moved, so identities and contacts start fresh.
+
 ## v0.8.18 — 2026-08-20 — the hardening pass: an external audit, verified line by line
 
 An independent 36-area audit (Kimi K3) of the whole fork, executed with a

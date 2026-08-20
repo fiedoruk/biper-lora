@@ -256,7 +256,17 @@ int MyMesh::getFromOfflineQueue(uint8_t frame[]) {
 }
 
 float MyMesh::getAirtimeBudgetFactor() const {
+#ifdef BIPER_AP
+  // F-03 (wlasciciel, 21.08): TWARDY bezpiecznik prawny, nie preferencja.
+  // duty_cycle = 1/(1+factor), wiec 9.0 = maksymalnie 10% czasu antenowego —
+  // limit ETSI dla podpasma 869,4-869,65 MHz. Profil MeshCore (1.0 = 50%)
+  // pozwalalby urzadzeniu ratunkowemu zlamac prawo dokladnie wtedy, gdy
+  // nadaje najwiecej. Realny ruch (SOS co minute ~1,7%) miesci sie z zapasem.
+  // Getter, nie default prefs: wartosci z pliku/CLI nie moga tego podniesc.
+  return 9.0f;
+#else
   return _prefs.airtime_factor;
+#endif
 }
 
 int MyMesh::getInterferenceThreshold() const {

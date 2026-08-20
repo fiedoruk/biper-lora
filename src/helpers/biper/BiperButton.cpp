@@ -27,7 +27,7 @@ static const int BIPER_I2C_SDA = 10;
 static const int BIPER_I2C_SCL = 8;
 
 static const uint32_t BIPER_BTN_CLICK_MAX_MS = 600;
-static const uint32_t BIPER_BTN_HOLD_MS = 2500;
+static const uint32_t BIPER_BTN_HOLD_MS = 3000  /* F-01 (wlasciciel, 21.08): rowne 3 s, jak uczy ekran, strona i instrukcja — koniec sprzecznosci 2,5 vs 3 */;
 // Second press starting within this window after a release = double click;
 // a third one inside the next window = triple. Cost: a single click gains this
 // much latency, because it has to wait the window out.

@@ -1,0 +1,16 @@
+# M5Stack Unit C6L — 16 MB flash, tabela OTA-ready (decyzja wlasciciela F-04,
+# 21.08.2026). Stock board udawal 4 MB i huge_app.csv wypalal OTA na zawsze;
+# kostka ma fizycznie 16 MB (W25Q128). Dwa sloty aplikacji po 4 MB (dzisiejszy
+# firmware to ~2,4 MB — zapas na lata), reszta na system plikow uzytkownika
+# (tozsamosc, kontakty, kolejka offline). Sam mechanizm aktualizacji OTA to
+# osobny, przyszly wektor — ta tabela tylko przestaje go blokowac.
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x400000,
+app1,     app,  ota_1,   0x410000, 0x400000,
+# spiffs 1 MB, nie 7,9: SPIFFS zle skaluje sie powyzej ~2 MB (format i mount
+# po pierwszym erase trwaly minuty i boot wygladal na zawieszony), a dane
+# kostki to kilkadziesiat kB. Reszta flasha zostaje wolna na przyszlosc.
+spiffs,   data, spiffs,  0x810000, 0x100000,
+coredump, data, coredump,0xFF0000, 0x10000,

@@ -43,7 +43,7 @@ OUT="$ROOT/biper/releases/Biper_Unit_C6L-v${VERSION}-${COMMIT_SHA}-merged.bin"
 mkdir -p "$(dirname "$OUT")"
 
 "$PY" "$ESPTOOL" --chip esp32c6 merge_bin -o "$OUT" \
-  --flash_mode dio --flash_size 4MB \
+  --flash_mode dio --flash_size 16MB \
   0x0     "$B/bootloader.bin" \
   0x8000  "$B/partitions.bin" \
   0xe000  "$BOOTAPP" \
