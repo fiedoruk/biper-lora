@@ -9,6 +9,36 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.8.21 — 2026-08-20 — the autostart aftermath: four live-desk regressions, same day
+
+v0.8.20's autostart armed a landmine that had been lying in the code since the
+beginning: opening the hotspot window is a BLOCKING call inside the AP task's
+loop, and the advert machinery lived only in the idle part of that loop. With
+the window now open from second eight — and held open by a live panel — a cube
+never announced itself at all, and a pair showed SŁYSZĘ 0 on both screens
+within fifteen minutes. Found on the owner's desk, fixed and re-verified on
+hardware the same afternoon.
+
+- **Adverts tick in both loops (the root fix).** Boot advert, presence beacon
+  and advert-reply moved into a shared `biper_advert_tick()` called from the
+  idle loop AND from inside the window loop. Proof on hardware: with the
+  window open since second nine, the boot advert fired at 45.5 s.
+- **Anti-lockstep jitter, derived from the eFuse MAC.** Two cubes powered on
+  in the same second (a family after a blackout) transmitted their boot
+  adverts at the same millisecond — and their fixed 45 s / 10 min schedules
+  kept them colliding forever. A per-cube constant offset (0–20 s boot,
+  0–60 s beacon, 0–7 s advert-reply) breaks the symmetry deterministically.
+  Measured: simultaneous boot now yields adverts 11.8 s apart.
+- **Session takeover no longer eats the new client's first frame.** The
+  v0.8.20 RX flush discarded everything queued at the next mesh pass — a fast
+  phone's `APP_START` regularly arrived before that pass and vanished; iOS
+  hung on ŁĄCZĘ forever. The flush now walks only up to a marker recorded at
+  the takeover moment; frames that arrive after it stay.
+- **The inbound ring holds the panel's connect burst.** The panel opens with
+  six back-to-back frames; a depth-4 ring has three usable slots, so the
+  overflow was always dropped silently — v0.8.20's honest "busy" reply
+  (F-05) merely made it visible on every Android connect. Depth is now 8.
+
 ## v0.8.20 — 2026-08-20 — the second external audit: state truth and recovery
 
 A second independent full-tree audit (Codex) confirmed nine P1 findings —

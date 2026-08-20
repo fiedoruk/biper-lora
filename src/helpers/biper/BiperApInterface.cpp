@@ -75,20 +75,14 @@ static volatile int biper_ws_fd = -1;
 
 int biper_ws_fd_get() { return biper_ws_fd; }
 
-// Zaleglosci RX starego telefonu plucze KONSUMENT (petla mesh) — checkRecvFrame
-// widzi te flage przy najblizszym przebiegu. Zerowanie ogona z zadania httpd
-// lamaloby kontrakt SPSC (audyt Codexa F-06/F-10). Okno miedzy ustawieniem
-// flagi a jej konsumpcja to pojedyncze milisekundy — pierwsza ramka nowego
-// klienta przychodzi pozniej, niz petla mesh zdazy splukac stare.
-static volatile bool biper_rx_flush_req = false;
-
 void biper_ws_session_open(httpd_handle_t hd, int fd) {
   // Ring TX zerowany na progu sesji: po takeover ramki zakolejkowane dla
   // STAREGO telefonu wysylaly sie do nowego (audyt Kimi B-05.1). Rozkazy
   // starego telefonu czekajace w RX takze nie moga wykonac sie na koncie
-  // nowej sesji (audyt Codexa F-06) — stad zlecenie plukania.
+  // nowej sesji (audyt Codexa F-06) — plukanie wykonuje KONSUMENT (petla
+  // mesh) i tylko DO miejsca przejecia; szczegoly przy requestRxFlush().
   biper_iface.dropTxQueue();
-  biper_rx_flush_req = true;
+  biper_iface.requestRxFlush();
   biper_ws_hd = hd;
   biper_ws_fd = fd;
   Serial.printf("[BIPER_WS] client connected fd=%d\n", fd);
@@ -231,8 +225,14 @@ bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
 }
 
 size_t BiperApInterface::checkRecvFrame(uint8_t dest[]) {
-  // Plukanie po takeover — z wlasciwej strony ringu (konsument; patrz F-06).
-  if (biper_rx_flush_req) { biper_rx_flush_req = false; _rx_tail = _rx_head; }
+  // Plukanie po takeover — z wlasciwej strony ringu (konsument) i TYLKO do
+  // znacznika przejecia: ramki nowego klienta, ktore weszly po nim, zostaja.
+  // Straz `!= _rx_head` gwarantuje, ze ogon nigdy nie mija glowy (F-06).
+  if (_rx_flush_req) {
+    _rx_flush_req = false;
+    while (_rx_tail != _rx_flush_upto && _rx_tail != _rx_head)
+      _rx_tail = nextSlot(_rx_tail);
+  }
   if (_rx_tail == _rx_head) return 0;
   Frame& f = _rx[_rx_tail];
   size_t len = f.len;

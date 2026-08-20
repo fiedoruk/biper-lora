@@ -7,4 +7,4 @@
 // refuses to build an image whose banner would disagree with the file name —
 // v0.8 shipped printing "v0.7" because the banner was a forgotten literal.
 #pragma once
-#define BIPER_LAYER_VERSION "0.8.20"
+#define BIPER_LAYER_VERSION "0.8.21"

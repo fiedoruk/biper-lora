@@ -72,8 +72,13 @@ static volatile uint32_t biper_advert_reply_at = 0;  // 0 = nothing pending
 static uint32_t biper_advert_last_ms = 0;
 static uint32_t biper_presence_last_ms = 0;
 
+static uint32_t biper_jitter(uint32_t modulo);
+
 void biper_advert_reply_request() {
-  if (biper_advert_reply_at == 0) biper_advert_reply_at = millis() + BIPER_ADVERT_REPLY_DELAY_MS;
+  // Jitter takze tu: dwie SWIEZE kostki dostaja 0x8A rownoczesnie i bez
+  // przesuniecia odpowiadalyby sobie w tej samej chwili (patrz biper_jitter).
+  if (biper_advert_reply_at == 0)
+    biper_advert_reply_at = millis() + BIPER_ADVERT_REPLY_DELAY_MS + biper_jitter(7000);
 }
 // Probe handlers cannot read biper_ap_window()'s local softAPIP();
 // 192.168.4.1 is the ESP32 SoftAP default.
@@ -85,6 +90,8 @@ static bool from_the_cube(httpd_req_t* req);
 static void security_headers(httpd_req_t* req);
 static void biper_ssid_refresh();
 static void biper_ssid_compute(char* out, size_t out_len);
+static void biper_advert_tick();
+static uint32_t biper_jitter(uint32_t modulo);
 
 static Preferences biper_nvs;
 // The stored key stays "siec" ("network"): it is on flash in every cube already
@@ -752,6 +759,9 @@ static void biper_ap_window() {
     }
 
     biper_dns.processNextRequest();
+    // Adverty tykaja TAKZE przy otwartym oknie — patrz biper_advert_tick():
+    // z autostartem okno potrafi byc otwarte od 8. sekundy zycia do wieczora.
+    biper_advert_tick();
 
     const uint8_t guests = (uint8_t)WiFi.softAPgetStationNum();
     biper_state.guests = guests;
@@ -814,53 +824,80 @@ static void biper_ap_window() {
                 (unsigned long)ESP.getFreeHeap());
 }
 
+// ── MASZYNERIA ADVERTÓW: wspólny tick OBU pętli zadania AP ──────────────────
+// Do 0.8.20 ten kod żył wyłącznie w pętli bezczynności, a biper_ap_window()
+// to blokujące for(;;) — przy rzadkich, ręcznych oknach uchodziło to płazem.
+// Autostart (20.08) otworzył okno w 8. sekundzie od bootu, ZANIM boot advert
+// z 45. sekundy zdążył wystrzelić, a żywy panel trzyma okno bez końca (F-04)
+// — kostki po restarcie nie ogłaszały się WCALE i para pokazywała SŁYSZĘ 0
+// po obu stronach (biurko właściciela, 20.08 po południu). Tick woła się
+// z pętli bezczynności ORAZ z pętli okna, więc adverty nie zależą już od
+// stanu hotspotu.
+static bool biper_advert_done = false;
+
+// Jitter per kostka, wyliczany z efuse MAC: dwie kostki wpiete w tej samej
+// sekundzie (rodzina po blackoucie) nadawaly boot advert CO DO MILISEKUNDY
+// i wchodzily w wieczny lockstep takze beaconow obecnosci — kolizja RF
+// w kazdym cyklu, para nie slyszala sie nigdy (soak T1, 20.08: obie
+// "advert sent (boot)" o 13:27:02.173). Przesuniecie jest STALE dla danej
+// kostki (deterministyczny build i zachowanie), a rozne miedzy kostkami.
+static uint32_t biper_jitter(uint32_t modulo) {
+  const uint64_t mac = ESP.getEfuseMac();
+  const uint16_t fold = (uint16_t)(mac ^ (mac >> 16) ^ (mac >> 32) ^ (mac >> 48));
+  return (uint32_t)(fold % modulo);
+}
+
+static void biper_send_advert(const char* why) {
+  // Same frame the panel's ROZGLOS button sends: flood self-advert.
+  static const uint8_t ADVERT[] = {7, 1};  // CMD_SEND_SELF_ADVERT
+  biper_ap_interface()->onClientFrame(ADVERT, sizeof(ADVERT));
+  biper_advert_last_ms = millis();
+  Serial.printf("[BIPER] advert sent (%s)\n", why);
+}
+
+static void biper_advert_tick() {
+  const uint32_t t_now = millis();
+  if (!biper_advert_done && t_now >= BIPER_ADVERT_BOOT_MS + biper_jitter(20000)) {
+    biper_advert_done = true;
+    if (biper_forwarding()) biper_send_advert("boot");
+    else Serial.printf("[BIPER] boot advert skipped (SAM)\n");
+  }
+  // Advert-reply: a new neighbour appeared; answer once the short delay
+  // passes, unless we have advertised recently anyway.
+  if (biper_advert_reply_at != 0 && t_now >= biper_advert_reply_at) {
+    biper_advert_reply_at = 0;
+    // The reply gets its OWN short gap, not the shared ten minutes: the
+    // boot advert almost always fired within the last ten minutes, so the
+    // shared limit silently suppressed the one transmission that completes
+    // the pair — observed as "cube A sees B, B does not see A" on the
+    // owner's pair (morning after 0.8.10). One minute still prevents storms.
+    if (biper_forwarding() && (biper_advert_last_ms == 0 ||
+        t_now - biper_advert_last_ms >= BIPER_ADVERT_REPLY_GAP_MS)) {
+      biper_send_advert("reply");
+    }
+  }
+  // Periodic re-advert: heals a missed boot window (the pair problem) and
+  // keeps neighbours' "last heard" honest. SIEC only; SAM stays silent.
+  if (biper_advert_done && biper_forwarding() && biper_advert_last_ms != 0 &&
+      t_now - biper_advert_last_ms >= BIPER_ADVERT_PERIOD_MS) {
+    biper_send_advert("periodic");
+  }
+  // Presence beacon (zero-hop): see BIPER_PRESENCE_PERIOD_MS. First one
+  // fires ~10 min after boot; switching SAM back to SIEC sends one at once,
+  // so the cube reappears on neighbours' screens the moment it rejoins.
+  if (biper_advert_done && biper_forwarding() &&
+      t_now - biper_presence_last_ms >= BIPER_PRESENCE_PERIOD_MS + biper_jitter(60000)) {
+    biper_presence_last_ms = t_now;
+    static const uint8_t PRESENCE[] = {7, 0};  // CMD_SEND_SELF_ADVERT, zero-hop
+    biper_ap_interface()->onClientFrame(PRESENCE, sizeof(PRESENCE));
+    Serial.printf("[BIPER] advert sent (presence)\n");
+  }
+}
+
 static void biper_ap_task(void*) {
   vTaskDelay(pdMS_TO_TICKS(BIPER_AP_BOOT_DELAY_MS));
-  bool advert_done = false;
-  auto send_advert = [](const char* why) {
-    // Same frame the panel's ROZGLOS button sends: flood self-advert.
-    static const uint8_t ADVERT[] = {7, 1};  // CMD_SEND_SELF_ADVERT
-    biper_ap_interface()->onClientFrame(ADVERT, sizeof(ADVERT));
-    biper_advert_last_ms = millis();
-    Serial.printf("[BIPER] advert sent (%s)\n", why);
-  };
   for (;;) {
-    const uint32_t t_now = millis();
-    if (!advert_done && t_now >= BIPER_ADVERT_BOOT_MS) {
-      advert_done = true;
-      if (biper_forwarding()) send_advert("boot");
-      else Serial.printf("[BIPER] boot advert skipped (SAM)\n");
-    }
-    // Advert-reply: a new neighbour appeared; answer once the short delay
-    // passes, unless we have advertised recently anyway.
-    if (biper_advert_reply_at != 0 && t_now >= biper_advert_reply_at) {
-      biper_advert_reply_at = 0;
-      // The reply gets its OWN short gap, not the shared ten minutes: the
-      // boot advert almost always fired within the last ten minutes, so the
-      // shared limit silently suppressed the one transmission that completes
-      // the pair — observed as "cube A sees B, B does not see A" on the
-      // owner's pair (morning after 0.8.10). One minute still prevents storms.
-      if (biper_forwarding() && (biper_advert_last_ms == 0 ||
-          t_now - biper_advert_last_ms >= BIPER_ADVERT_REPLY_GAP_MS)) {
-        send_advert("reply");
-      }
-    }
-    // Periodic re-advert: heals a missed boot window (the pair problem) and
-    // keeps neighbours' "last heard" honest. SIEC only; SAM stays silent.
-    if (advert_done && biper_forwarding() && biper_advert_last_ms != 0 &&
-        t_now - biper_advert_last_ms >= BIPER_ADVERT_PERIOD_MS) {
-      send_advert("periodic");
-    }
-    // Presence beacon (zero-hop): see BIPER_PRESENCE_PERIOD_MS. First one
-    // fires ~10 min after boot; switching SAM back to SIEC sends one at once,
-    // so the cube reappears on neighbours' screens the moment it rejoins.
-    if (advert_done && biper_forwarding() &&
-        t_now - biper_presence_last_ms >= BIPER_PRESENCE_PERIOD_MS) {
-      biper_presence_last_ms = t_now;
-      static const uint8_t PRESENCE[] = {7, 0};  // CMD_SEND_SELF_ADVERT, zero-hop
-      biper_ap_interface()->onClientFrame(PRESENCE, sizeof(PRESENCE));
-      Serial.printf("[BIPER] advert sent (presence)\n");
-    }
+    biper_advert_tick();
     if (biper_toggle_req) {
       biper_toggle_req = false;
       biper_ap_window();

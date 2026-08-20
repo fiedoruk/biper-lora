@@ -15,7 +15,12 @@ class BiperApInterface : public BaseSerialInterface {
     uint16_t len;
     uint8_t buf[MAX_FRAME_SIZE];
   };
-  static const int QUEUE_SIZE = 4;  // same depth as upstream's TCP interface
+  // 8, nie 4 (upstreamowa glebia TCP): sekwencja startowa panelu to SZESC
+  // ramek pod rzad (APP_START, DEVICE_QUERY, SET_TIME, GET_BATT, GET_CONTACTS,
+  // SYNC), a ring o glebi 4 ma uzyteczne TRZY sloty — nadmiar byl gubiony po
+  // cichu, dopoki odpowiedz 0xB5 (F-05) nie zaczela tego uczciwie pokazywac:
+  // Android widywal "KOSTKA ZAJETA" przy kazdym polaczeniu (biurko, 20.08).
+  static const int QUEUE_SIZE = 8;
 
   // A ring is empty when head == tail and full when advancing head would land
   // on tail, so one slot always stays unused.
@@ -27,6 +32,9 @@ class BiperApInterface : public BaseSerialInterface {
   // Rings: single writer + single reader each, lock-free via volatile indices.
   Frame _rx[QUEUE_SIZE];
   volatile uint8_t _rx_head = 0, _rx_tail = 0;
+  // Plukanie po takeover: do ktorego miejsca (F-06) i czy zlecone.
+  volatile uint8_t _rx_flush_upto = 0;
+  volatile bool _rx_flush_req = false;
   Frame _tx[QUEUE_SIZE];
   volatile uint8_t _tx_head = 0, _tx_tail = 0;
 
@@ -50,6 +58,12 @@ public:
   void resetQueues();
   // Zeruje SAM ring TX — na progu przejecia sesji (patrz biper_ws_session_open).
   void dropTxQueue() { _tx_head = _tx_tail = 0; }
+  // Zleca plukanie RX DO BIEZACEGO head (ramki sprzed przejecia sesji).
+  // Wolane z taska httpd (producenta), wykonane przez konsumenta w
+  // checkRecvFrame. Znacznik miejsca jest konieczny: plukanie "wszystkiego"
+  // zjadalo APP_START nowego klienta, ktory zdazyl wejsc przed najblizszym
+  // przebiegiem petli mesh — iOS wisial wiecznie na LACZE (biurko, 20.08).
+  void requestRxFlush() { _rx_flush_upto = _rx_head; _rx_flush_req = true; }
 };
 
 BiperApInterface* biper_ap_interface();
