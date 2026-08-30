@@ -1,6 +1,8 @@
+
+
 > **This is Biper** — a product fork of MeshCore for the M5Stack Unit C6L.
 > The fork's own README, status and evidence live in [.github/README.md](.github/README.md);
-> everything below is the upstream MeshCore README, kept as-is.
+> everything below is the upstream MeshCore README, kept as-is. Use the fork README for Biper build commands.
 
 ## About MeshCore
 
