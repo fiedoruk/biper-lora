@@ -15,6 +15,7 @@
 // state preview, never break the transport.
 static const uint8_t CMD_SEND_DM        = 2;     // CMD_SEND_TXT_MSG
 static const uint8_t CMD_SEND_CHANNEL   = 3;     // CMD_SEND_CHANNEL_TXT_MSG
+static const uint8_t RESP_ERR           = 1;     // RESP_CODE_ERR
 static const uint8_t RESP_SENT          = 6;     // RESP_CODE_SENT
 static const uint8_t RESP_DM_OLD        = 7;     // RESP_CODE_CONTACT_MSG_RECV: [7][pub6]...
 static const uint8_t RESP_DM_V3         = 16;    // ..._V3: [16][snr][r1][r2][pub6]...
@@ -32,12 +33,20 @@ static const uint8_t MAX_HEARD = 12;
 struct HeardNode { uint8_t pfx[4]; uint32_t when; };
 static HeardNode heard[MAX_HEARD];
 
-static void note_advert(const uint8_t* pub) {
+// Returns true when this node was NOT in the live window before (first time
+// heard, or heard again after it expired) — that is the moment worth answering
+// with our own advert (see writeFrame). Upstream's 0x8A "new advert" push does
+// not mean that: BaseChatMesh raises is_new only for contacts it did NOT store
+// (policy, hop limit, table full), so a freshly added neighbour arrives as 0x80
+// and the reply never fired (audit 05.09, C-12).
+static bool note_advert(const uint8_t* pub) {
   const uint32_t now = millis();
   int free_slot = -1;
   for (int i = 0; i < MAX_HEARD; i++) {
     if (heard[i].when && memcmp(heard[i].pfx, pub, 4) == 0) {
-      heard[i].when = now; return;                  // known: just refresh
+      const bool expired = now - heard[i].when > HEARD_WINDOW_MS;
+      heard[i].when = now;                           // known: just refresh
+      return expired;
     }
     if (free_slot < 0 && (heard[i].when == 0 ||
                       now - heard[i].when > HEARD_WINDOW_MS)) free_slot = i;
@@ -55,6 +64,7 @@ static void note_advert(const uint8_t* pub) {
   }
   memcpy(heard[free_slot].pfx, pub, 4);
   heard[free_slot].when = now;
+  return true;
 }
 
 uint8_t biper_heard_15min() {
@@ -155,6 +165,8 @@ void BiperApInterface::beginSession() {
   // oproznic (weryfikacja Kimi, 20.08). Prog nowej sesji zeruje TX — pod
   // mutexem to legalne, producent (mesh) tez pisze pod nim.
   _tx_head = _tx_tail = 0;
+  // Oczekiwania RESP nalezaly do starej sesji (0.9.2, audyt C-20).
+  _resp_head = _resp_tail = 0;
   if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
 }
 
@@ -175,12 +187,12 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   // counter missed the exact moment two fresh cubes met: each discovered the
   // other and both screens kept saying SLYSZE 0.
   else if ((src[0] == PUSH_ADVERT || src[0] == PUSH_NEW_ADVERT) && len >= 5) {
-    note_advert(&src[1]);
-    // A NEWLY discovered neighbour has us in range but almost certainly does
-    // not have US yet — its one boot advert may have flown while we were
-    // still flashing. Ask the AP task to answer with our own advert, so a
-    // single advert in either direction completes the pair.
-    if (src[0] == PUSH_NEW_ADVERT) biper_advert_reply_request();
+    // A NEWLY heard neighbour has us in range but almost certainly does not
+    // have US yet — its one boot advert may have flown while we were still
+    // flashing. Ask the AP task to answer with our own advert, so a single
+    // advert in either direction completes the pair. "New" is decided by OUR
+    // heard-table, not by the push code (see note_advert).
+    if (note_advert(&src[1])) biper_advert_reply_request();
   }
   // A direct message IS hearing its sender. The counter used to listen only to
   // adverts, so two cubes in mid-conversation could still show SLYSZE 0 — the
@@ -195,10 +207,13 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   // late, duplicated or belonging to another interface — must not light DOSZLO
   // on the screen (audyt Codexa F-03/F-19; ten sam mechanizm co w panelu).
   else if (src[0] == PUSH_CONFIRMED) biper_face_confirmed(len >= 5 ? &src[1] : nullptr);
-  else if (src[0] == RESP_SENT) {
-    // Czyj to RESP? FIFO z onClientFrame mowi, ktora komenda go wywolala —
-    // tylko DM (2) rejestruje znacznik doreczenia; login/status/telemetria
-    // przechodza bez sladu na twarzy (weryfikacja Codexa, 20.08).
+  else if (src[0] == RESP_SENT || src[0] == RESP_ERR) {
+    // Czyj to RESP? FIFO (wpis w checkRecvFrame, przy WYKONANIU komendy) mowi,
+    // ktora komenda go wywolala — tylko DM (2) rejestruje znacznik doreczenia;
+    // login/status/telemetria przechodza bez sladu na twarzy (weryfikacja
+    // Codexa, 20.08). ERR tez zdejmuje wpis: komenda, ktora padla, nie dostanie
+    // juz RESP_SENT, a jej wpis blokowalby dopasowanie nastepnego DM-a (0.9.2,
+    // audyt C-20). Cudzy ERR (np. zly kod importu) przy pustym FIFO = no-op.
     uint8_t expected = 0;
     if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
     if (_resp_tail != _resp_head) {
@@ -206,7 +221,7 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
       _resp_tail = (uint8_t)((_resp_tail + 1) % 8);
     }
     if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
-    if (expected == CMD_SEND_DM) biper_face_resp_sent(len >= 6 ? &src[2] : nullptr);
+    if (src[0] == RESP_SENT && expected == CMD_SEND_DM) biper_face_resp_sent(len >= 6 ? &src[2] : nullptr);
   }
   // Odczyt fd/hd, wpis do ringu i queue_work pod JEDNYM przebiegiem mutexa:
   // zamkniecie okna czysci hd i dopiero POTEM zatrzymuje httpd (tez pod
@@ -228,35 +243,60 @@ size_t BiperApInterface::writeFrame(const uint8_t src[], size_t len) {
   memcpy(f.buf, src, len);
   _tx_head = nextSlot(_tx_head);
   // Marshal the actual socket write into the httpd task context.
+  const int fd = biper_ws_fd;
   const bool queued = httpd_queue_work(hd, [](void*) { biper_iface.drainTx(); }, nullptr) == ESP_OK;
   if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
   if (!queued) {
-    biper_ws_session_close();  // pelna kolejka httpd: inaczej most milczy do restartu (Kimi B-05.3)
+    // Pelna kolejka httpd: inaczej most milczy do restartu (Kimi B-05.3).
+    // Gniazdo zamykamy NAPRAWDE (0.9.2, audyt C-19): samo wyzerowanie fd
+    // zostawialo stare polaczenie zywe i zdolne do wysylania komend.
+    httpd_sess_trigger_close(hd, fd);
+    biper_ws_session_close();
   }
   return len;
 }
 
 void BiperApInterface::drainTx() {
-  // Pod mutexem: resetQueues z zadania AP zeruje indeksy TX i bez blokady
-  // moglby to zrobic w polowie naszego przebiegu (weryfikacja Codexa, 20.08).
-  if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
-  while (_tx_tail != _tx_head) {
-    Frame& f = _tx[_tx_tail];
-    // Ramka z poprzedniej sesji gasnie tu, zamiast leciec do nowego telefonu.
-    if (biper_ws_fd >= 0 && f.gen == _session_gen) {
-      httpd_ws_frame_t ws = {};
-      ws.type = HTTPD_WS_TYPE_BINARY;
-      ws.payload = f.buf;
-      ws.len = f.len;
-      if (httpd_ws_send_frame_async(biper_ws_hd, biper_ws_fd, &ws) == ESP_OK) {
-        biper_tx_frames = biper_tx_frames + 1;
-      } else {
-        biper_ws_session_close();
+  // Jedna ramka na obieg: indeksy i kopia POD mutexem (resetQueues z zadania AP
+  // zeruje indeksy TX i bez blokady moglby to zrobic w polowie naszego
+  // przebiegu — Codex 20.08), a wysylka do gniazda POZA nim. send() na
+  // gniezdzie telefonu, ktory zasnal z pelnym oknem TCP, blokuje do
+  // send_wait_timeout — trzymany wtedy mutex zatrzymywal cala petle mesh
+  // (audyt 05.09, P1-1). drainTx biegnie tylko w tasku httpd, wiec statyczny
+  // bufor wyjsciowy nie potrzebuje blokady.
+  static uint8_t out[MAX_FRAME_SIZE];
+  for (;;) {
+    size_t out_len = 0;
+    int fd = -1;
+    httpd_handle_t hd = nullptr;
+    if (_mtx) xSemaphoreTake((SemaphoreHandle_t)_mtx, portMAX_DELAY);
+    while (_tx_tail != _tx_head) {
+      Frame& f = _tx[_tx_tail];
+      _tx_tail = nextSlot(_tx_tail);
+      // Ramka z poprzedniej sesji gasnie tu, zamiast leciec do nowego telefonu.
+      if (biper_ws_fd >= 0 && f.gen == _session_gen) {
+        memcpy(out, f.buf, f.len);
+        out_len = f.len;
+        fd = biper_ws_fd;
+        hd = biper_ws_hd;
+        break;
       }
     }
-    _tx_tail = nextSlot(_tx_tail);
+    if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
+    if (out_len == 0) return;
+    httpd_ws_frame_t ws = {};
+    ws.type = HTTPD_WS_TYPE_BINARY;
+    ws.payload = out;
+    ws.len = out_len;
+    if (httpd_ws_send_frame_async(hd, fd, &ws) == ESP_OK) {
+      biper_tx_frames = biper_tx_frames + 1;
+    } else {
+      // Gniazdo, ktore nie przyjmuje ramek, zamykamy naprawde (audyt C-19).
+      httpd_sess_trigger_close(hd, fd);
+      biper_ws_session_close();
+      return;
+    }
   }
-  if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
 }
 
 bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
@@ -278,19 +318,9 @@ bool BiperApInterface::onClientFrame(const uint8_t* payload, size_t len) {
   if (payload[0] == CMD_SEND_DM || payload[0] == CMD_SEND_CHANNEL) {
     biper_face_set(FACE_NADAJE);
   }
-  // FIFO oczekiwanych RESP_CODE_SENT: tylko te komendy go dostana (MyMesh);
-  // dzieki temu RESP LOGIN-u nie zuzywa oczekiwania DM-a. Pelne FIFO wypycha
-  // najstarszy wpis — desynchronizacja konczy sie brakiem CZEKAM, nie klamstwem.
-  switch (payload[0]) {
-    case 2: case 26: case 27: case 39: case 52: case 57: {
-      const uint8_t rn = (uint8_t)((_resp_head + 1) % 8);
-      if (rn == _resp_tail) _resp_tail = (uint8_t)((_resp_tail + 1) % 8);
-      _resp_fifo[_resp_head] = payload[0];
-      _resp_head = rn;
-      break;
-    }
-    default: break;
-  }
+  // FIFO oczekiwanych RESP zapelnia sie DOPIERO przy wykonaniu komendy
+  // (checkRecvFrame), nie tu: komenda odrzucona po przejeciu sesji nigdy nie
+  // dostanie odpowiedzi i jej wpis rozjezdzal FIFO na zawsze (audyt C-20).
   Frame& f = _rx[_rx_head];
   f.len = (uint16_t)len;
   f.gen = _session_gen;  // komenda nalezy do TEJ sesji; po takeover jest pomijana
@@ -347,6 +377,19 @@ size_t BiperApInterface::checkRecvFrame(uint8_t dest[]) {
   size_t len = f.len;
   memcpy(dest, f.buf, len);
   _rx_tail = nextSlot(_rx_tail);
+  // FIFO oczekiwanych RESP_CODE_SENT: tylko te komendy go dostana (MyMesh);
+  // dzieki temu RESP LOGIN-u nie zuzywa oczekiwania DM-a. Pelne FIFO wypycha
+  // najstarszy wpis — desynchronizacja konczy sie brakiem CZEKAM, nie klamstwem.
+  switch (f.buf[0]) {
+    case 2: case 26: case 27: case 39: case 52: case 57: {
+      const uint8_t rn = (uint8_t)((_resp_head + 1) % 8);
+      if (rn == _resp_tail) _resp_tail = (uint8_t)((_resp_tail + 1) % 8);
+      _resp_fifo[_resp_head] = f.buf[0];
+      _resp_head = rn;
+      break;
+    }
+    default: break;
+  }
   if (_mtx) xSemaphoreGive((SemaphoreHandle_t)_mtx);
   return len;
 }

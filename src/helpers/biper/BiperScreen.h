@@ -50,8 +50,12 @@ enum BiperFace {
 void biper_face_set(BiperFace f);
 void biper_face_resp_sent(const uint8_t* tag_or_null);   // RESP_SENT z ramki
 void biper_face_confirmed(const uint8_t* tag_or_null);   // PUSH_CONFIRMED z ramki
+// Najnizszy zapas stosu zadania ekranu w bajtach (0 = zadanie nie istnieje).
+// Telemetria [BIPER_AP] drukuje to obok heapu (audyt 05.09, P2-3).
+unsigned biper_screen_stack_free();
 #else
 static inline void biper_face_set(BiperFace) {}
 static inline void biper_face_resp_sent(const uint8_t*) {}
 static inline void biper_face_confirmed(const uint8_t*) {}
+static inline unsigned biper_screen_stack_free() { return 0; }
 #endif

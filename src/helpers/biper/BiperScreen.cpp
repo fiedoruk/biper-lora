@@ -745,8 +745,12 @@ static void wipe_everything() {
     if (scr != nullptr) {
       scr->clearDisplay();
       scr->setTextSize(1);
-      draw_centered(14, "ZAJETE");
-      draw_centered(26, "SPROBUJ ZNOWU");
+      // Trzy wiersze po <=10 znakow: "SPROBUJ ZNOWU" mialo 13 i draw_centered
+      // ucinalo oba konce dokladnie wtedy, gdy odmowa wymazania cos znaczyla
+      // (audyt 05.09, C-44).
+      draw_centered(12, screen_line("ZAJETE"));
+      draw_centered(24, screen_line("SPROBUJ"));
+      draw_centered(36, screen_line("ZNOWU"));
       scr->display();
       toast_until = millis() + BIPER_SCR_TOAST_MS;
     } else {
@@ -897,6 +901,10 @@ static void biper_screen_task(void*) {
       const uint32_t held_ms = biper_button_held_ms();
       if (held_ms >= BIPER_WIPE_FROM_MS) {
         ninja_panel(true);          // the countdown must show in ninja too
+        // ...i ma zgasnac SAMO po zwolnieniu: bez odnawianego okna budzenia
+        // przerwane odliczanie zostawialo panel swiecacy w trybie ninja
+        // (audyt 05.09, C-21).
+        ninja_wake_until = now + BIPER_NINJA_WAKE_MS;
         // Ten sam nieprzerwany ucisk odpalil juz gest hotspotu w 3. sekundzie.
         // Kto doszedl do odliczania, nie chcial przelaczac okna — cofamy tamto
         // przelaczenie, wiec przerwane wymazanie zostawia kostke w stanie
@@ -976,13 +984,22 @@ static void biper_screen_task(void*) {
   }
 }
 
+static TaskHandle_t biper_scr_task = nullptr;
+
+unsigned biper_screen_stack_free() {
+  if (biper_scr_task == nullptr) return 0;
+  return (unsigned)(uxTaskGetStackHighWaterMark(biper_scr_task) * sizeof(StackType_t));
+}
+
 void biper_screen_start() {
   // Bez tego zadania nie ma ekranu, gestow ani feedbacku. Zawiedziona alokacja
   // ma zostawic slad w logu zamiast udawac, ze wszystko gra (Codex F-14);
   // mesh i mostek panelu dzialaja dalej bez nas.
-  if (xTaskCreate(biper_screen_task, "biper_scr", 4096, NULL, 1, NULL) != pdPASS)
+  if (xTaskCreate(biper_screen_task, "biper_scr", 4096, NULL, 1, &biper_scr_task) != pdPASS) {
+    biper_scr_task = nullptr;
     Serial.printf("[BIPER_SCR] task create FAILED, heap=%lu\n",
                   (unsigned long)ESP.getFreeHeap());
+  }
 }
 
 #endif  // BIPER_AP && BIPER_SCREEN

@@ -88,6 +88,29 @@ TEST(WindowKeepalive, SocketWithoutAnyFrameNeverHolds) {
   EXPECT_FALSE(biper_window_keepalive(1, 57, 100000, 0, 180000));
 }
 
+// Import kodu kontaktu (0.9.1, audyt K-1): panel dostaje PRAWDE, nie "OK po
+// parsowaniu". Sam podpis Ed25519 weryfikuje bench na sprzecie; tu logika
+// klasyfikacji, wspolna dla firmware i atrapy panelu.
+TEST(ImportStatus, UnknownSenderIsAdded) {
+  EXPECT_EQ(BIPER_IMPORT_NOWY, biper_import_status(false, false, 1000, 0));
+}
+
+TEST(ImportStatus, KnownWithFresherCodeIsRefreshed) {
+  EXPECT_EQ(BIPER_IMPORT_SWIEZY, biper_import_status(false, true, 2000, 1000));
+}
+
+TEST(ImportStatus, KnownWithStaleOrEqualCodeChangesNothing) {
+  // Rowny stempel tez "masz juz" — petla zwrotna odrzucilaby go jako replay.
+  EXPECT_EQ(BIPER_IMPORT_MASZ, biper_import_status(false, true, 1000, 1000));
+  EXPECT_EQ(BIPER_IMPORT_MASZ, biper_import_status(false, true, 999, 1000));
+}
+
+TEST(ImportStatus, OwnCodeWinsOverEverything) {
+  // Czlowiek wkleja wlasny kod "na probe" — najczestszy cichy przypadek K-1.
+  EXPECT_EQ(BIPER_IMPORT_SELF, biper_import_status(true, true, 2000, 1000));
+  EXPECT_EQ(BIPER_IMPORT_SELF, biper_import_status(true, false, 0, 0));
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

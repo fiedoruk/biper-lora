@@ -106,6 +106,9 @@ static DNSServer biper_dns;
 static httpd_handle_t biper_httpd = nullptr;
 static BiperApState biper_state;
 static volatile bool biper_toggle_req = false;
+// Okno sie zamyka: nowe handshake'i WS sa odrzucane, zeby sesja nie zostala
+// opublikowana juz po wyzerowaniu ringow, a przed httpd_stop (audyt 05.09, C-8).
+static volatile bool biper_stopping = false;
 
 const BiperApState& biper_ap_get_state() { return biper_state; }
 
@@ -460,6 +463,7 @@ static esp_err_t ws_handler(httpd_req_t* req) {
       Serial.printf("[BIPER_WS] handshake refused: foreign origin/host\n");
       return ESP_FAIL;
     }
+    if (biper_stopping) return ESP_FAIL;  // okno wlasnie gasnie (C-8)
     const int fd = httpd_req_to_sockfd(req);
     if (biper_ws_fd_get() >= 0 && biper_ws_fd_get() != fd) {
       // NEWEST client wins. Refusing the second one looked principled and
@@ -476,6 +480,9 @@ static esp_err_t ws_handler(httpd_req_t* req) {
     biper_ws_session_open(req->handle, fd);
     return ESP_OK;
   }
+  // Ramki przyjmujemy TYLKO z gniazda biezacej sesji: stare polaczenie,
+  // ktorego juz nie sledzimy, nie ma prawa wydawac rozkazow (audyt C-19).
+  if (httpd_req_to_sockfd(req) != biper_ws_fd_get()) return ESP_FAIL;
   static uint8_t ws_buf[MAX_FRAME_SIZE];
   httpd_ws_frame_t f = {};
   // Two-step read: max_len 0 fills type/len only, then we supply the buffer.
@@ -483,7 +490,11 @@ static esp_err_t ws_handler(httpd_req_t* req) {
   if (f.len > MAX_FRAME_SIZE) return ESP_FAIL;  // oversize: drop connection
   // Fragment WS bylby oddany jako KOMPLETNA ramka protokolu (przegladarki
   // malych ramek nie fragmentuja, ale kontrakt ma byc szczelny — Kimi B-04a).
-  if (f.fragmented) return ESP_FAIL;
+  // `f.fragmented` jest polem NADAWCZYM i dla ramek odebranych nigdy nie jest
+  // ustawiane (esp_http_server.h) — bramka z 0.8.x byla pusta. Odebrany
+  // fragment poznajemy po braku FIN (`final`) albo po opcode CONTINUE
+  // (audyt 05.09, C-11).
+  if (!f.final || f.type == HTTPD_WS_TYPE_CONTINUE) return ESP_FAIL;
   if (f.len > 0) {
     f.payload = ws_buf;
     if (httpd_ws_recv_frame(req, &f, f.len) != ESP_OK) return ESP_FAIL;
@@ -526,6 +537,10 @@ static bool biper_httpd_start() {
   // 2 s zamiast domyslnych 5: httpd to jeden task, a telefon zasypiajacy
   // w POLOWIE ramki mrozil caly panel na pelny timeout odbioru (Kimi B-04b).
   cfg.recv_wait_timeout = 2;
+  // To samo dla NADAWANIA: uspiony telefon z pelnym oknem TCP blokowal send()
+  // na 5 s na kazda ramke (audyt 05.09, P1-1; wysylka jest juz poza mutexem,
+  // ale krotszy timeout skraca tez czas zycia martwej sesji).
+  cfg.send_wait_timeout = 2;
   if (httpd_start(&biper_httpd, &cfg) != ESP_OK) return false;
 
   // Fields in order: uri, method, handler, user_ctx, is_websocket,
@@ -580,7 +595,12 @@ static void biper_httpd_stop() {
 // dropping the current guests mid-session.
 static void biper_ssid_compute(char* out, size_t out_len) {
   char wybor[8] = {0};
-  const size_t wl = biper_nvs.getString(NVS_WORD, wybor, sizeof(wybor));
+  // Preferences::getString(key, char*, max) zwraca dlugosc Z terminatorem
+  // (nvs_get_str) — mierzona na tej wartosci walidacja 2-4 liter NIGDY nie
+  // przechodzila i wlasne slowo nie wchodzilo do SSID (0.9.1; audyt 05.09,
+  // C-10). Liczymy litery sami.
+  biper_nvs.getString(NVS_WORD, wybor, sizeof(wybor));
+  const size_t wl = strnlen(wybor, sizeof(wybor));
   bool ok = wl >= 2 && wl <= 4;
   for (size_t i = 0; ok && i < wl; i++) ok = wybor[i] >= 'A' && wybor[i] <= 'Z';
   if (ok) {
@@ -668,6 +688,7 @@ static void biper_ap_window() {
   const uint32_t t_start = millis();
 
   biper_ssid_refresh();
+  biper_stopping = false;
 
   WiFi.mode(WIFI_AP);
 #ifdef BIPER_AP_OPEN
@@ -790,11 +811,17 @@ static void biper_ap_window() {
       // batt: measured 0 mV on the C6L (18 Aug 2026) — the board has no battery and
   // no battery sense (doc 29: USB-C 5 V only). Kept on the telemetry line as a
   // regression tripwire: any non-zero value means the target copy changed under us.
-      Serial.printf("[BIPER_AP] t=%lus heap=%lu min=%lu sta=%d batt=%umV\n",
+      // stack_*: zapas stosu obu zadan warstwy w bajtach (najnizszy odczytany
+      // poziom). Zadanie ekranu ma 4 kB i robi zapisy NVS, I2C i printf —
+      // audyt 05.09 (P2-3) nie umial tego ocenic bez pomiaru; ta linia jest
+      // pomiarem. Ponizej ~512 B = powiekszyc stos, nie liczyc na szczescie.
+      Serial.printf("[BIPER_AP] t=%lus heap=%lu min=%lu sta=%d batt=%umV stack_ap=%u stack_scr=%u\n",
                     (unsigned long)(elapsed / 1000),
                     (unsigned long)ESP.getFreeHeap(),
                     (unsigned long)ESP.getMinFreeHeap(),
-                    (int)guests, (unsigned)biper_batt_mv());
+                    (int)guests, (unsigned)biper_batt_mv(),
+                    (unsigned)(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)),
+                    (unsigned)biper_screen_stack_free());
       if (biper_ap_interface()->isConnected()) {
         Serial.printf("[BIPER_WS] rx=%lu tx=%lu\n",
                       (unsigned long)biper_ws_rx_count(),
@@ -823,6 +850,7 @@ static void biper_ap_window() {
   // the exact two failures the boot-time enable() exists to prevent. Incoming
   // messages are safe either way (the offline queue is unconditional; pushes
   // are only a doorbell), so an always-listening bridge costs nothing.
+  biper_stopping = true;
   biper_ap_interface()->resetQueues();
   biper_httpd_stop();
   biper_dns.stop();
@@ -1011,7 +1039,11 @@ void biper_ap_setup(NodePrefs* prefs, MultiSerialInterface* manager) {
   // biper_forwarding_toggle() above.
   // Storage opens unconditionally: the fixed hotspot password lives here too,
   // and it must survive even a build where prefs never arrived.
-  biper_nvs.begin(NVS_NAMESPACE, false);
+  if (!biper_nvs.begin(NVS_NAMESPACE, false)) {
+    // Bez tej linii chory NVS objawialby sie tylko innym haslem przy kazdym
+    // oknie i trybem SIEC po kazdym restarcie (audyt 05.09, P2-4).
+    Serial.printf("[BIPER_AP] nvs begin FAILED: password and SIEC/SAM will not persist\n");
+  }
   if (prefs != nullptr) {
     const bool forwarding = biper_nvs.getBool(NVS_FORWARD, true);
     prefs->setRepeatEn(forwarding);

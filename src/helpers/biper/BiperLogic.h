@@ -83,3 +83,23 @@ inline bool biper_window_keepalive(uint8_t guests, int ws_fd, uint32_t now,
   if (last_rx_ms == 0) return false;          // klient nigdy sie nie odezwal
   return now - last_rx_ms < activity_ms;
 }
+
+// Wynik importu kodu kontaktu (ramka 0xB6, drugi bajt). Do 0.9.0 kostka
+// odpowiadala OK po samym sparsowaniu kodu, a podpis, wlasny klucz i stary
+// stempel odrzucala dopiero petla zwrotna — PO CICHU. Panel mowil "dodano"
+// przy kodzie z literowka, wlasnym i przeterminowanym; uzytkownicy zglaszali
+// "kody profili sie nie zgadzaja" (audyt 2026-08-31, K-1). Zero nie jest
+// statusem: zly podpis/parsowanie ida stara ramka ERR ("kod nieprawidlowy").
+enum BiperImportStatus : uint8_t {
+  BIPER_IMPORT_NOWY   = 1,  // nieznany nadawca — kontakt dodany
+  BIPER_IMPORT_SWIEZY = 2,  // znany, kod swiezszy — wpis odswiezony
+  BIPER_IMPORT_MASZ   = 3,  // znany, kod stary — nic sie nie zmienia
+  BIPER_IMPORT_SELF   = 4,  // wlasny kod tej kostki
+};
+
+inline uint8_t biper_import_status(bool is_self, bool known,
+                                   uint32_t code_ts, uint32_t known_ts) {
+  if (is_self) return BIPER_IMPORT_SELF;
+  if (!known) return BIPER_IMPORT_NOWY;
+  return (code_ts > known_ts) ? BIPER_IMPORT_SWIEZY : BIPER_IMPORT_MASZ;
+}

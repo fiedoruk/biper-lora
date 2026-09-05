@@ -441,7 +441,7 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
     </div>
     <p class="sos-sub" id="sos-sub" role="alert"></p>
     <button class="cancel" id="cancel" data-k="b_cancel">ANULUJ ALARM</button>
-    <p class="sos-info" data-k="sos_powtarza">Alarm powtarza się co minutę, aż go odwołasz.</p>
+    <p class="sos-info" data-k="sos_powtarza">Alarm powtarza się co minutę, dopóki ten panel jest otwarty — nie blokuj telefonu.</p>
     <div class="frame stan-kostki" id="stan-kostki">
       <h2 data-k="h_stan">TWOJA KOSTKA</h2>
       <div class="kv"><b data-k="k_name">nazwa</b><span id="s-nazwa" class="mono">&mdash;</span></div>
@@ -504,12 +504,21 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
     </div>
     <button class="btn" id="b-wifi" data-k="b_wifi">ZAPISZ NAZWĘ WI-FI</button>
     <label class="f" data-k="f_prof">KONTAKT NA ODLEGŁOŚĆ</label>
-    <div class="frame">
+    <style>/* Werdykt UX 31.08: piec pudelek o pieciu szerokosciach i dwoch
+      modelach wysokosci (a.btn vs button.btn) czytalo sie jak chaos; jedna
+      krawedz i jedna wysokosc na cala sekcje. resize:none — uchwyt zmiany
+      rozmiaru na polu kodu to falszywa afordancja. */
+    #fr-kody .btn{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;box-sizing:border-box;text-decoration:none}
+    #fr-kody textarea{resize:none}</style>
+    <div class="frame" id="fr-kody">
       <p style="color:var(--dim);font-size:12px;margin:0 0 8px" data-k="prof_opis">Wymieńcie się kodami w obie strony (SMS, e-mail, komunikator) — każdy wkleja kod drugiej osoby. Kod jest podpisany przez kostkę i nie da się go podrobić.</p>
       <button class="btn" id="b-eksport" data-k="b_eksport">POKAŻ MÓJ KOD</button>
       <textarea class="f mono" id="f-kod" rows="3" readonly style="width:100%;display:none;margin:8px 0 0;font-size:11px" aria-label="Mój kod kontaktu"></textarea>
       <button class="btn" id="b-kopiuj" data-k="b_kopiuj" style="display:none">KOPIUJ KOD</button>
-      <textarea class="f mono" id="f-import" rows="3" style="width:100%;margin:12px 0 0;font-size:11px" data-k-ph="import_ph" placeholder="Wklej tu kod od drugiej osoby…"></textarea>
+      <a class="btn" id="b-sms" data-k="b_sms" style="display:none;text-align:center;text-decoration:none;vertical-align:top;box-sizing:border-box">WYŚLIJ SMS-EM</a>
+      <a class="btn" id="b-mail" data-k="b_mail" style="display:none;text-align:center;text-decoration:none;vertical-align:top;box-sizing:border-box">WYŚLIJ E-MAILEM</a>
+      <label class="f" for="f-import" style="margin-top:20px" data-k="f_imp">KOD OD DRUGIEJ OSOBY</label>
+      <textarea class="f mono" id="f-import" rows="3" style="width:100%;margin:4px 0 0;font-size:11px" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-k-ph="import_ph" placeholder="Wklej tu kod od drugiej osoby…"></textarea>
       <button class="btn" id="b-import" data-k="b_import">DODAJ KONTAKT Z KODU</button>
     </div>
     <label class="f" for="f-theme" data-k="f_theme">MOTYW</label>
@@ -530,6 +539,8 @@ nav button.alarm::after{content:"";position:absolute;top:4px;right:calc(50% - 24
     <div class="frame">
       <div class="kv"><span id="bak-info" class="mono">&mdash;</span></div>
       <button class="btn" id="b-restore" data-k="b_restore" disabled>PRZYWROC</button>
+      <div class="kv"><span id="hist-info" class="mono">&mdash;</span></div>
+      <button class="btn" id="b-hist-czysc" data-k="b_histclr">WYCZYŚĆ HISTORIĘ W TYM TELEFONIE</button>
     </div>
     <label class="f" data-k="k_radio">RADIO</label>
     <div class="frame"><span id="v-radio" class="mono">&mdash;</span></div>
@@ -579,6 +590,7 @@ var RECONNECT_MS=2500,   /* retry the cube socket this long after it drops */
     AXIS_SPAN=Math.log(WARM_S/60+1), /* log x: the fresh end gets the room */
     HOP_RINGS=3,         /* ack rings drawn around the SOS button */
     PATH_DIRECT=0xFF,    /* MeshCore path byte: heard with no repeater between */
+    PANEL_VER="v0.18 / K5", /* jedna stala, dwa miejsca wyswietlania (audyt P3-6) */
     MOTYW_KEY="biper_motyw",
     JEZYK_KEY="biper_jezyk",
     BAK_KEY="biper_backup";
@@ -601,9 +613,12 @@ function hops(n){
   if(lang==="en")return "via "+n+(n===1?" cube":" cubes");
   return tr("path_hops").replace("%n",n)}
 function hhmm(){var d=new Date();return pad2(d.getHours())+":"+pad2(d.getMinutes())}
+/* Godzina ze stempla ramki (sekundy epoki); kostka bez ustawionego czasu
+   nadaje stemple z 1970 — wtedy uczciwiej pokazac godzine odbioru. */
+function hhmmOf(ts){if(!(ts>1000000000))return hhmm();var d=new Date(ts*1000);return pad2(d.getHours())+":"+pad2(d.getMinutes())}
 /* ===== i18n ===== */
 var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:"radio",
-  k_ack:"odezwało się sąsiadów",err:"nie poszło",f_name:"TWOJA NAZWA",b_save:"ZAPISZ",b_adv:"ROZGŁOŚ SIĘ SĄSIADOM",f_wifi:"WI-FI KOSTKI",b_wifi:"ZAPISZ NAZWĘ WI-FI",f_prof:"KONTAKT NA ODLEGŁOŚĆ",prof_opis:"Wymieńcie się kodami w obie strony (SMS, e-mail, komunikator) — każdy wkleja kod drugiej osoby. Kod jest podpisany przez kostkę i nie da się go podrobić.",b_eksport:"POKAŻ MÓJ KOD",b_kopiuj:"KOPIUJ KOD",b_import:"DODAJ KONTAKT Z KODU",import_ph:"Wklej tu kod od drugiej osoby…",prof_dodano:"dodano — patrz KONTAKTY",prof_zly:"kod nieprawidłowy",prof_skopiowano:"skopiowano",wifi_note:"2–4 litery bez ogonków. Nowa nazwa od następnego okna hotspotu; puste pole wraca do wylosowanej.",wifi_ok:"od następnego okna",wifi_zle:"tylko litery A–Z (2–4)",
+  k_ack:"odezwało się sąsiadów",err:"nie poszło",f_name:"TWOJA NAZWA",b_save:"ZAPISZ",b_adv:"ROZGŁOŚ SIĘ SĄSIADOM",f_wifi:"WI-FI KOSTKI",b_wifi:"ZAPISZ NAZWĘ WI-FI",f_prof:"KONTAKT NA ODLEGŁOŚĆ",prof_opis:"Wymieńcie się kodami w obie strony (SMS, e-mail, komunikator) — każdy wkleja kod drugiej osoby. Kod jest podpisany przez kostkę i nie da się go podrobić.",b_eksport:"POKAŻ MÓJ KOD",b_kopiuj:"KOPIUJ KOD",b_sms:"WYŚLIJ SMS-EM",b_mail:"WYŚLIJ E-MAILEM",prof_mailsub:"Kod kontaktu Biper",prof_recznie:"zaznaczone — przytrzymaj i Kopiuj",b_import:"DODAJ KONTAKT Z KODU",f_imp:"KOD OD DRUGIEJ OSOBY",import_ph:"Wklej tu kod od drugiej osoby…",prof_dodano:"dodano: %n — patrz KONTAKTY",prof_masz:"masz już: %n",prof_self:"to kod TEJ kostki — wyślij go drugiej osobie",prof_zly:"kod nieprawidłowy",prof_skopiowano:"skopiowano",wifi_note:"2–4 litery bez ogonków. Nowa nazwa od następnego okna hotspotu; puste pole wraca do wylosowanej.",wifi_ok:"od następnego okna",wifi_zle:"tylko litery A–Z (2–4)",
   f_theme:"MOTYW",o_dark:"ciemny",o_light:"jasny",t_help:"ALARM",t_chat:"KANAŁ",
   t_nodes:"KONTAKTY",a_zamknij:"zamknij",a_wstecz:"wstecz",a_hsos:"przejdź do alarmu",a_radar:"Drabina przeskoków słyszanych kostek",a_os:"Aktywność w ostatniej godzinie",e_kto:"Kto jest wokoło",e_godzina:"Ostatnia godzina w eterze",e_przyrzady:"Przyrządy",e_legenda:"Biper nie zna kierunku ani odległości — to nie jest mapa",e_60:"60 min temu",e_teraz:"teraz",
     t_info:"PORADNIK",
@@ -616,7 +631,9 @@ var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:
   wstrzymany:"WSTRZYMANY",nowa_wiad:"Nowa wiadomość od %s: %t",
     armed:"NADAJĘ",next_tx:"następne nadanie",sos_fail:"błąd nadawania — spróbuj ponownie",
   sos_cofnij:"Wysyłam za chwilę — dotknij, żeby przerwać.",
-  sos_powtarza:"Alarm powtarza się co minutę, aż go odwołasz.",
+  sos_powtarza:"Alarm powtarza się co minutę, dopóki ten panel jest otwarty — nie blokuj telefonu.",
+  cancel_czekam:"Odwołuję alarm — czekam na potwierdzenie kostki.",
+  cancel_odrzucone:"<b>Nie odwołano</b> — kostka odrzuciła rozkaz. Spróbuj ponownie.",
   h_stan:"TWOJA KOSTKA",k_tryb:"tryb radia",k_slyszy:"słyszy",k_zasil:"zasilanie",
   k_praca:"czas pracy",k_hotspot:"hotspot",
   zasil_kabel:"z kabla — kostka nie ma ogniwa",
@@ -638,14 +655,14 @@ var L={pl:{sos_sub:"potrzebuję pomocy",h_node:"WĘZEŁ",k_name:"nazwa",k_radio:
   a2hs_and:"Menu &#8942; &rarr; Dodaj do ekranu",
   a2hs_note:"Ikona działa, gdy telefon jest w sieci kostki (wstaje sama po zasilaniu).",
   f_bak:"KOPIA ZAPASOWA",bak_none:"brak kopii — zrobi się sama po synchronizacji",
-  bak_info:"kontaktów: %n · zapis: %t",b_restore:"PRZYWRÓĆ",restored:"przywrócono %n",
+  bak_info:"kontaktów: %n · zapis: %t",b_restore:"PRZYWRÓĆ",b_histclr:"WYCZYŚĆ HISTORIĘ W TYM TELEFONIE",hist_sep:"— nowe —",hist_wycz:"wyczyszczone",hist_info:"historia w tym telefonie — wątki: %n",restored:"przywrócono %n",
   z1:"U mnie OK",z2:"Gdzie jesteś?",z3:"Wracam do domu",z4:"Czekam tutaj",
   zostalo:"zostało %n znaków",brak_lacza:"nie ma łączności z kostką — sprawdź, czy hotspot działa",
     za_dlugo:"o %n za dużo — skróć",
   pusto_t:"Cicho na kanale",
   pusto_p:"Nikt jeszcze nic nie napisał. Napisz pierwszy — usłyszą Cię wszyscy w zasięgu."},
 en:{sos_sub:"I need help",h_node:"NODE",k_name:"name",k_radio:"radio",
-  k_ack:"neighbours heard from",err:"not sent",f_name:"YOUR NAME",b_save:"SAVE",b_adv:"ANNOUNCE TO NEIGHBOURS",f_wifi:"CUBE\u2019S WI-FI",b_wifi:"SAVE WI-FI NAME",f_prof:"CONTACT AT A DISTANCE",prof_opis:"Exchange codes both ways (SMS, e-mail, any messenger) \u2014 each person pastes the other\u2019s code. The code is signed by the cube and cannot be forged.",b_eksport:"SHOW MY CODE",b_kopiuj:"COPY CODE",b_import:"ADD CONTACT FROM CODE",import_ph:"Paste the other person\u2019s code here\u2026",prof_dodano:"added \u2014 see KONTAKTY",prof_zly:"invalid code",prof_skopiowano:"copied",wifi_note:"2\u20134 plain letters. The new name applies from the next hotspot window; an empty field returns to the drawn one.",wifi_ok:"from the next window",wifi_zle:"letters A\u2013Z only (2\u20134)",
+  k_ack:"neighbours heard from",err:"not sent",f_name:"YOUR NAME",b_save:"SAVE",b_adv:"ANNOUNCE TO NEIGHBOURS",f_wifi:"CUBE\u2019S WI-FI",b_wifi:"SAVE WI-FI NAME",f_prof:"CONTACT AT A DISTANCE",prof_opis:"Exchange codes both ways (SMS, e-mail, any messenger) \u2014 each person pastes the other\u2019s code. The code is signed by the cube and cannot be forged.",b_eksport:"SHOW MY CODE",b_kopiuj:"COPY CODE",b_sms:"SEND BY SMS",b_mail:"SEND BY E-MAIL",prof_mailsub:"Biper contact code",prof_recznie:"selected — press and hold, then Copy",b_import:"ADD CONTACT FROM CODE",f_imp:"THE OTHER PERSON\u2019S CODE",import_ph:"Paste the other person\u2019s code here\u2026",prof_dodano:"added: %n \u2014 see KONTAKTY",prof_masz:"already have: %n",prof_self:"this cube\u2019s own code \u2014 send it to the other person",prof_zly:"invalid code",prof_skopiowano:"copied",wifi_note:"2\u20134 plain letters. The new name applies from the next hotspot window; an empty field returns to the drawn one.",wifi_ok:"from the next window",wifi_zle:"letters A\u2013Z only (2\u20134)",
   f_theme:"THEME",o_dark:"dark",o_light:"light",t_help:"SOS",t_chat:"CHANNEL",
   f_tryb:"RADIO MODE",tryb_czekam:"reading from the cube…",tryb_siec:"carries other people's messages onward",tryb_sam:"transmits only yours",tryb_gest:"Changed with three clicks of the button on the cube.",
   t_nodes:"CONTACTS",a_zamknij:"close",a_wstecz:"back",a_hsos:"go to the alarm",a_radar:"Hop ladder of audible cubes",a_os:"Activity in the last hour",e_kto:"Who is around",e_godzina:"The last hour on the air",e_przyrzady:"Instruments",e_legenda:"Biper knows no direction or distance — this is not a map",e_60:"60 min ago",e_teraz:"now",
@@ -658,7 +675,9 @@ en:{sos_sub:"I need help",h_node:"NODE",k_name:"name",k_radio:"radio",
   wstrzymany:"PAUSED",nowa_wiad:"New message from %s: %t",
     armed:"ON AIR",next_tx:"next transmit",sos_fail:"send failed — try again",
   sos_cofnij:"Sending in a moment — tap to stop.",
-  sos_powtarza:"The alarm repeats every minute until you cancel it.",
+  sos_powtarza:"The alarm repeats every minute while this panel stays open — keep the phone unlocked.",
+  cancel_czekam:"Cancelling — waiting for the cube to confirm.",
+  cancel_odrzucone:"<b>Not cancelled</b> — the cube refused the command. Try again.",
   h_stan:"YOUR CUBE",k_tryb:"radio mode",k_slyszy:"hears",k_zasil:"power",
   k_praca:"uptime",k_hotspot:"hotspot",
   zasil_kabel:"from the cable — the cube has no cell",
@@ -680,7 +699,7 @@ en:{sos_sub:"I need help",h_node:"NODE",k_name:"name",k_radio:"radio",
   a2hs_and:"Menu &#8942; &rarr; Add to Home screen",
   a2hs_note:"The icon works while the phone is on the cube's network (it starts by itself at power-on).",
   f_bak:"BACKUP",bak_none:"no backup yet — made automatically after a sync",
-  bak_info:"contacts: %n · saved: %t",b_restore:"RESTORE",restored:"restored %n",
+  bak_info:"contacts: %n · saved: %t",b_restore:"RESTORE",b_histclr:"CLEAR HISTORY ON THIS PHONE",hist_sep:"— new —",hist_wycz:"cleared",hist_info:"history on this phone — threads: %n",restored:"restored %n",
   z1:"I am OK",z2:"Where are you?",z3:"Heading home",z4:"Waiting here",
   zostalo:"%n characters left",brak_lacza:"no link to the cube — check that its hotspot is on",
     za_dlugo:"%n too many — shorten it",
@@ -709,13 +728,25 @@ function applyLang(){
 var CMD={APP_START:1,SEND_TXT:2,SEND_CHAN:3,GET_CONTACTS:4,GET_TIME:5,SET_TIME:6,ADVERT:7,EXPORT:17,IMPORT:18,DEV_QUERY:22,
   SET_NAME:8,ADD_CONTACT:9,SYNC:10,GET_BATT:20};
 var RESP={OK:0,ERR:1,C_START:2,CONTACT:3,C_END:4,SELF_INFO:5,SENT:6,CURR_TIME:9,
-  NO_MORE:10,BATT:12,DM_V3:16,CHAN_V3:17};
+  NO_MORE:10,BATT:12,DM_V3:16,CHAN_V3:17,IMP:0xB6};
 var PUSH={ADVERT:0x80,CONFIRMED:0x82,MSG_WAITING:0x83};
 var ws=null,linked=false,selfName="",sosArmed=false,sosNext=0,acks=0,
     battMv=0,pendingSos=false,devTimeOfs=0,sosOdliczTimer=null,sosStart=0;
 var nodes={};        /* prefixHex -> {name,pub,last,path,unread,msgs:[]} */
 var openThread=null; /* prefixHex when a DM thread is open */
 var czekamNaEksport=false,czekamNaImport=false;
+/* ===== komendy czekajace na odpowiedz (0.9.2, audyt C-2/C-4) =====
+   Kazdy rozkaz, na ktory kostka odpowiada OK/ERR/SENT/0xB6, wchodzi tu w
+   kolejnosci wyslania; odpowiedz zdejmuje GLOWE i trafia w to, co ja wywolalo.
+   Do 0.9.1 RESP.SENT lecial do "ostatniej wlasnej wiadomosci OTWARTEGO watku":
+   dwa szybkie DM-y dawaly pierwszemu wieczne NADANO, a drugiemu cudzy tag, a
+   OK od advertu stemplowalo wiadomosc kanalowa. Wpis starszy niz 15 s uznajemy
+   za zgubiony (odpowiedz nie przyszla) i wyrzucamy przy nastepnej odpowiedzi. */
+var pend=[],cancelPending=false,restoredOnce=false;
+function pendPush(k,ref){pend.push({k:k,ref:ref,t:Date.now()})}
+function pendShift(){while(pend.length&&Date.now()-pend[0].t>15000)pend.shift();return pend.shift()||null}
+function pendDropLast(){return pend.pop()||null}
+function stampDom(d,html){var mt=d&&d.querySelector&&d.querySelector(".meta");if(mt)mt.innerHTML=html}
 var chatTarget="chan";
 function u8(a){return new Uint8Array(a)}
 function hex(b,off,n){var s="";for(var i=off;i<off+n;i++)
@@ -823,7 +854,12 @@ function odmiana(n,formy){
   var f=formy.split("|"),a=n%10,b=n%100;
   if(n===1)return f[0];
   return (a>=2&&a<=4&&(b<12||b>14))?f[1]:f[2]}
+var reconnT=0,lastRxMs=0;
+/* Jedyny planista ponownego laczenia: kasuje poprzedni timer, wiec dwa tory
+   (onclose i powrot karty) nie otworza dwoch gniazd naraz. */
+function planConnect(ms){clearTimeout(reconnT);reconnT=setTimeout(connect,ms)}
 function connect(){
+  if(ws&&ws.readyState<2){try{ws.onclose=null;ws.close()}catch(_){}}
   setStat("st_conn");
   var Socket=window.MOCK?FakeWS:WebSocket;
   ws=new Socket("ws://"+location.host+"/ws");
@@ -833,9 +869,19 @@ function connect(){
     f[0]=CMD.APP_START;f[1]=3;writeText(f,8,name);
     ws.send(f);
     ws.send(u8([CMD.GET_BATT]))};
-  ws.onmessage=function(e){onFrame(new Uint8Array(e.data))};
-  ws.onclose=function(){setLinked(false);setTimeout(connect,RECONNECT_MS)};
+  ws.onmessage=function(e){lastRxMs=Date.now();onFrame(new Uint8Array(e.data))};
+  ws.onclose=function(){setLinked(false);planConnect(RECONNECT_MS)};
 }
+/* Powrot karty na wierzch: iOS/Android zamrazaja strone po zablokowaniu
+   ekranu, a gniazdo bywa wtedy martwe BEZ zdarzenia close (zombie). Panel
+   czekal na onclose, ktore nie przychodzilo (audyt L-2). Sonda zaraz po
+   odmrozeniu: zywe gniazdo odpowie na GET_BATT, martwe domknie watchdog. */
+function wakeCheck(){
+  if(window.MOCK||!ws)return;
+  if(ws.readyState>1){planConnect(0);return}
+  if(ws.readyState===1)try{ws.send(u8([CMD.GET_BATT]))}catch(_){}}
+document.addEventListener("visibilitychange",function(){if(!document.hidden)wakeCheck()});
+window.addEventListener("pageshow",wakeCheck);
 function now(){return Math.floor(Date.now()/1000)}
 function ago(ts){
   if(!ts)return tr("just");
@@ -856,6 +902,19 @@ function onFrame(b){
     var freq=dv.getUint32(48,true),sf=b[56];
     name=readText(b,58,b.length);
     selfName=name;
+    /* M-1: klucz archiwum = tozsamosc kostki (pub key od bajtu 4 ramki
+       SELF_INFO). Po reinstalacji (eraseAll = nowa tozsamosc) archiwum
+       startuje czyste. Wczytanie raz, przy pierwszym polaczeniu. */
+    var cubeHk="biper-hist:"+hex(b,4,6);
+    if(histKey&&histKey!==cubeHk){
+      /* Inna kostka pod tym samym 192.168.4.1 (druga kostka w domu, reinstalacja
+         = nowa tozsamosc): archiwum i watki poprzedniej nie moga sie zmieszac
+         z nowa (audyt C-13). Stare zapisujemy pod starym kluczem, potem czysto. */
+      zapiszHistorie();nodes={};openThread=null;chatTarget="chan";showNodeThread(false);
+      $("feed").innerHTML="";ostatniDomKanal=null;ostatniaMoja=null;pend=[];
+      histKey="";histWczytana=false;drawNodes();
+    }
+    if(!histKey){histKey=cubeHk;wczytajHistorie()}
     $("v-name").textContent=name;
     /* Nazwa przychodzi ramka SELF_INFO, czyli PO pierwszym odczycie /stan —
        bez tego karta na ekranie startowym pokazywala kreske do przelaczenia
@@ -880,7 +939,7 @@ function onFrame(b){
     ws.send(u8([CMD.DEV_QUERY,3]));
     var tb=new Uint8Array(5),ep=Math.floor(Date.now()/1000);
     tb[0]=CMD.SET_TIME;tb[1]=ep&255;tb[2]=(ep>>>8)&255;tb[3]=(ep>>>16)&255;tb[4]=(ep>>>24)&255;
-    ws.send(tb);
+    ws.send(tb);pendPush("other");
     ws.send(u8([CMD.GET_CONTACTS]));
     /* Oproznienie kolejki NA STARCIE: wiadomosci, ktore przyszly przy
        zgaszonym ekranie, lezaly w kostce niewidoczne — panel dosysal tylko
@@ -905,48 +964,78 @@ function onFrame(b){
       czekamNaEksport=false;
       var kod="BIPER1:"+b64z(b.subarray(1));
       $("f-kod").value=kod;$("f-kod").style.display="block";
-      $("b-kopiuj").style.display="inline-block";
+      $("b-kopiuj").style.display="flex";
+      /* GLOWNA sciezka wysylki to sms:/mailto: z kodem w tresci — dzialaja
+         bez schowka i bez HTTPS. Pod http://192.168.4.1 nie ma
+         navigator.clipboard ANI navigator.share (bezpieczny kontekst),
+         a slepy fallback kopiowania klamal "skopiowano" (audyt K-2).
+         Tresc = SAM kod: ludzie wklejaja cala wiadomosc jak leci. */
+      var eKod=encodeURIComponent(kod);
+      $("b-sms").href=(/iPad|iPhone|iPod/.test(navigator.userAgent)?"sms:?&body=":"sms:?body=")+eKod;
+      $("b-mail").href="mailto:?subject="+encodeURIComponent(tr("prof_mailsub"))+"&body="+eKod;
+      $("b-sms").style.display="flex";$("b-mail").style.display="flex";
     }
   }else if(code===RESP.C_END){
     for(var q in nodes)if(nodes[q].stale&&!nodes[q].msgs.length)delete nodes[q];
-    saveBackup();
+    saveBackup();saveHist();
     drawTele();drawNodes();drawBackup();
   }else if(code===RESP.BATT){
     battMv=b[1]|(b[2]<<8);drawTele();
-  }else if(code===RESP.OK&&czekamNaImport){
-    czekamNaImport=false;
-    flashLabel($("b-import"),tr("prof_dodano"),"b_import");
-    $("f-import").value="";
-    ws.send(u8([CMD.GET_CONTACTS]));
+  }else if(code===RESP.IMP&&czekamNaImport){
+    /* 0.9.1: kostka weryfikuje kod PRZED odpowiedzia i mowi, KOGO dodala
+       (audyt K-1: "dodano" bez weryfikacji bylo klamstwem strukturalnym). */
+    czekamNaImport=false;pendShift();
+    var impSt=b[1],impKto=readText(b,2,b.length);
+    if(impSt===4){flashLabel($("b-import"),tr("prof_self"),"b_import")}
+    else if(impSt===3){flashLabel($("b-import"),tr("prof_masz").replace("%n",impKto),"b_import");$("f-import").value=""}
+    else{flashLabel($("b-import"),tr("prof_dodano").replace("%n",impKto),"b_import");
+      $("f-import").value="";ws.send(u8([CMD.GET_CONTACTS]))}
   }else if(code===RESP.ERR&&czekamNaImport){
-    czekamNaImport=false;
+    czekamNaImport=false;pendShift();
     flashLabel($("b-import"),tr("prof_zly"),"b_import");
   }else if(code===RESP.OK){
     /* Kanal publiczny odpowiada samym OK i NIGDY nie dostaje potwierdzenia
        odbioru. Zostawianie stempla „czeka" na zawsze bylo obietnica bez
        pokrycia — wiadomosc poszla w eter i tyle wiemy. Dlatego BEZ ringu
-       oczekiwania: pierscien obiecuje potwierdzenie, ktore tu nie istnieje. */
-    if(pendingSos)pendingSos=false;
-    markLastMine(stamp("sent",hhmm(),""),true);
+       oczekiwania: pierscien obiecuje potwierdzenie, ktore tu nie istnieje.
+       OK trafia w rozkaz z glowy kolejki: advert, nazwa, czas i kontakt nie
+       stempluja niczego (audyt C-4). */
+    var po=pendShift();
+    if(!po)markLastMine(stamp("sent",hhmm(),""),true);           /* rozjazd: stara sciezka */
+    else if(po.k==="chan"||po.k==="sos")stampDom(po.ref,stamp("sent",hhmm(),""));
+    if(po&&po.k==="sos")pendingSos=false;
+    if(po&&po.k==="cancel")finishDisarm();
   }else if(code===RESP.SENT){
     /* Firmware oddaje tu 4-bajtowy znacznik oczekiwanego potwierdzenia
        (MyMesh.cpp: „app needs to match this to RESP_CODE_SENT.tag"). Zapisujemy
-       go PRZY WIADOMOSCI — bez tego potwierdzenie ladowalo na ostatniej wlasnej
-       wiadomosci w OTWARTYM watku, czyli regularnie na cudzej. */
-    if(pendingSos)pendingSos=false;
-    markLastMine(stamp("sent",hhmm(),"st-pend"),false,b.length>=6?dv.getUint32(2,true):0);
+       go PRZY TEJ wiadomosci, ktora go wywolala — glowa kolejki (audyt C-2). */
+    var ps=pendShift(),ackS=b.length>=6?dv.getUint32(2,true):0;
+    if(ps&&ps.k==="dm"){ps.ref.st=stamp("sent",hhmm(),"st-pend");if(ackS)ps.ref.ack=ackS;ostatniaMoja=ps.ref;odswiezWidok()}
+    else markLastMine(stamp("sent",hhmm(),"st-pend"),false,ackS);   /* rozjazd: stara sciezka */
   }else if(code===RESP.ERR){
-    if(pendingSos){pendingSos=false;setSosNote(tr("sos_fail"))}
-    else markLastMine(stamp("err",hhmm(),"st-err"),true);
+    var pe=pendShift();
+    if(pe&&pe.k==="sos"){pendingSos=false;setSosNote(tr("sos_fail"));stampDom(pe.ref,stamp("err",hhmm(),"st-err"))}
+    else if(pe&&pe.k==="cancel"){cancelPending=false;setSosNote(tr("cancel_odrzucone"));stampDom(pe.ref,stamp("err",hhmm(),"st-err"))}
+    else if(pe&&pe.k==="chan")stampDom(pe.ref,stamp("err",hhmm(),"st-err"));
+    else if(pe&&pe.k==="dm"){pe.ref.st=stamp("err",hhmm(),"st-err");odswiezWidok()}
+    else if(!pe){if(pendingSos){pendingSos=false;setSosNote(tr("sos_fail"))}else markLastMine(stamp("err",hhmm(),"st-err"),true)}
   }else if(code===PUSH.CONFIRMED){
     /* Ten sam ACK potrafi przyjsc kilka razy (ostrzega o tym sam firmware),
        wiec dopasowujemy po znaczniku i stemplujemy TYLKO raz. */
     stempluj(b.length>=5?dv.getUint32(1,true):0);
+    saveHist();
   }else if(code===0xB5){
     /* Kostka odmowila przyjecia ramki (pelna kolejka). Do 0.8.19 rozkaz ginal
        PO CICHU — WYSLIJ bez sladu (audyt Codexa F-05). Bez auto-ponowienia:
        odpowiedz nie wskazuje, KTORA ramka przepadla, wiec slepy retry moglby
-       zdublowac wyslana wiadomosc. Czlowiek widzi i slyszy — i ponawia sam. */
+       zdublowac wyslana wiadomosc. Czlowiek widzi i slyszy — i ponawia sam.
+       0xB5 odpowiada synchronicznie na ostatnio wyslana ramke — to ona nie
+       weszla, wiec zdejmujemy OSTATNI wpis kolejki i mowimy prawde o nim. */
+    var pb=pendDropLast();
+    if(pb&&pb.k==="sos"){pendingSos=false;setSosNote(tr("sos_fail"));stampDom(pb.ref,stamp("err",hhmm(),"st-err"))}
+    else if(pb&&pb.k==="cancel"){cancelPending=false;setSosNote(tr("cancel_odrzucone"));stampDom(pb.ref,stamp("err",hhmm(),"st-err"))}
+    else if(pb&&pb.k==="chan")stampDom(pb.ref,stamp("err",hhmm(),"st-err"));
+    else if(pb&&pb.k==="dm"){pb.ref.st=stamp("err",hhmm(),"st-err");odswiezWidok()}
     powiedz(tr("busy"));
     $("hs").textContent=tr("busy");
     setTimeout(function(){setStat(linked?"st_on":"st_off")},2000);
@@ -963,18 +1052,30 @@ function onFrame(b){
     txt=readText(b,11,b.length);
     var who=txt,body=txt,sep=txt.indexOf(": ");
     if(sep>0){who=txt.slice(0,sep);body=txt.slice(sep+2)}
-    addMsg("feed",who,body,snr,false,false);
+    /* Stempel z RAMKI, nie z zegara telefonu: wiadomosc z kolejki offline
+       sprzed godzin pokazywala "teraz" i liczyla sie jako swiezy sasiad po
+       alarmie (audyt C-15). Live = stempel w oknie 10 min od teraz. */
+    var chTs=dv.getUint32(7,true),chLive=Math.abs(now()-chTs)<600,chIdx=b[4];
+    /* Kanal inny niz publiczny (skonfigurowany innym klientem) dostaje znacznik
+       i nie liczy sie jako odpowiedz na alarm; odpowiedz i tak idzie na 0
+       (audyt C-7). */
+    if(chIdx!==0)who="#"+chIdx+" "+who;
+    addMsg("feed",who,body,snr,false,false,hhmmOf(chTs),chLive);
     powiedz(tr("nowa_wiad").replace("%s", who).replace("%t", body));
-    if(sosArmed)odezwalSie("k:"+who);
+    if(sosArmed&&chLive&&chIdx===0)odezwalSie("k:"+who);
     if(!$("s-czat").className.match(/on/))badge("t-czat",true);
     ws.send(u8([CMD.SYNC]))
   }else if(code===RESP.DM_V3){
     pfx=hex(b,4,6);
     snr=readSnr(b);
     txt=readText(b,16,b.length);
+    var dmTs=dv.getUint32(12,true),dmLive=Math.abs(now()-dmTs)<600;
     if(!nodes[pfx])nodes[pfx]={name:"~"+pfx.slice(0,4),unread:0,msgs:[],last:now()};
     node=nodes[pfx];
-    node.msgs.push({me:false,body:txt,snr:snr,path:b[10],t:hhmm()});
+    node.msgs.push({me:false,body:txt,snr:snr,path:b[10],t:hhmmOf(dmTs)});
+    /* zywa wiadomosc = slychac nadawce TERAZ; backlog nie odswieza obecnosci */
+    if(dmLive){node.last=now()-devTimeOfs;eterZdarzenie()}
+    saveHist();
     /* pathMsg = trasa OSTATNIEJ realnej wiadomosci — swiezszy dowod niz
        out_path kontaktu (ktory dla nowo poznanych to zawsze 0xFF-nieznana) */
     node.pathMsg=b[10];
@@ -985,23 +1086,23 @@ function onFrame(b){
     ws.send(u8([CMD.SYNC]))
   }
 }
-function sendChan(text){
+function sendChan(text,kind,ref){
   var ts=now(),bt=textBytes(text),f=new Uint8Array(7+bt.length);
   f[0]=CMD.SEND_CHAN;f[1]=0;f[2]=0;
   new DataView(f.buffer).setUint32(3,ts,true);
   writeText(f,7,text);
-  ws.send(f)}
-function sendDm(pfx,text){
+  ws.send(f);pendPush(kind||"chan",ref)}
+function sendDm(pfx,text,ref){
   var ts=now(),bt=textBytes(text),f=new Uint8Array(13+bt.length);
   f[0]=CMD.SEND_TXT;f[1]=0;f[2]=0;
   new DataView(f.buffer).setUint32(3,ts,true);
   f.set(hexBytes(pfx),7);
   writeText(f,13,text);
-  ws.send(f)}
+  ws.send(f);pendPush("dm",ref)}
 function sendName(s){
   var f=new Uint8Array(1+textBytes(s).length);
   f[0]=CMD.SET_NAME;writeText(f,1,s);
-  ws.send(f)}
+  ws.send(f);pendPush("other")}
 
 /* ===== OKNO PISANIA ===== */
 /* Limit zalezy od tego, DOKAD piszemy, i nie jest umowny.
@@ -1184,6 +1285,12 @@ setInterval(function(){ if(document.body.dataset.tab==="eter")rysujEter(); }, 20
    nie sama skojarzona stacja Wi-Fi. GET_BATT co minute jest tym dowodem zycia;
    uspiony telefon przestaje pulsowac i kostka po cichu domyka okno. */
 setInterval(function(){ if(ws&&ws.readyState===1)ws.send(u8([CMD.GET_BATT])); }, 60000);
+/* Zombie-gniazdo: puls wychodzi, odpowiedzi nie ma. Po 90 s ciszy zamykamy
+   sami — onclose zaplanuje ponowne laczenie. Atrapa nie ma close(). */
+setInterval(function(){
+  if(window.MOCK||!ws)return;
+  if(ws.readyState===1&&lastRxMs&&Date.now()-lastRxMs>90000){try{ws.close()}catch(_){}}
+},30000);
 
 /* ===== SOS ===== */
 function setSosNote(html){$("sos-sub").innerHTML=html}
@@ -1206,15 +1313,15 @@ function sosFire(){
   $("sos").setAttribute("data-state","armed");
   $("sos-glyph").textContent=tr("armed");
   pendingSos=true;
-  ws.send(u8([CMD.ADVERT,1]));
-  sendChan(tr("sos_text"));
-  addMsg("feed",selfName,tr("sos_text"),null,true,true);
+  ws.send(u8([CMD.ADVERT,1]));pendPush("other");
+  var dsos=addMsg("feed",selfName,tr("sos_text"),null,true,true);
+  sendChan(tr("sos_text"),"sos",dsos);
   setSosNote("");
   sosNext=SOS_PERIOD}
 function armSos(){
   if(sosArmed)return;
   if(!linked){setSosNote(tr("sos_bez_lacza"));powiedz(tr("sos_bez_lacza"));return}
-  sosArmed=true;acks=0;odezwani={};
+  sosArmed=true;cancelPending=false;acks=0;odezwani={};
   $("v-ack").textContent="0";
   var rings=document.querySelectorAll(".hop");
   for(var i=0;i<rings.length;i++)rings[i].className="hop";
@@ -1259,11 +1366,16 @@ function disarmSos(){
   /* Odwolanie bez lacza jest gorsze niz brak odwolania: interfejs wracal do
      spoczynku i wpisywal „Odwoluje alarm", wiec czlowiek byl pewny, ze odwolal,
      a ratownicy dalej jechali. Alarm zostaje uzbrojony, dopoki odwolanie
-     naprawde nie pojdzie. */
+     naprawde nie pojdzie — od 0.9.2 takze, gdy kostka odpowie ERR albo
+     "zajete" (audyt C-4): rozbrojenie robi finishDisarm() po OK. */
   if(!lacze()){setSosNote(tr("cancel_bez_lacza"));return}
-  sosArmed=false;
-  sendChan(tr("cancel_text"));
-  addMsg("feed",selfName,tr("cancel_text"),null,true,false);
+  if(cancelPending)return;
+  cancelPending=true;
+  var dcn=addMsg("feed",selfName,tr("cancel_text"),null,true,false);
+  sendChan(tr("cancel_text"),"cancel",dcn);
+  setSosNote(tr("cancel_czekam"))}
+function finishDisarm(){
+  cancelPending=false;sosArmed=false;
   $("sos").setAttribute("data-state","idle");
   $("sos-glyph").textContent="SOS";
   $("sos-timer").textContent="";
@@ -1302,7 +1414,7 @@ function showChatbar(on){
     var f=$("feed"); if(f&&f.lastElementChild)f.lastElementChild.scrollIntoView({block:"end"});
   });
 }
-var PORADNIK={"pl":[["Czym to jest","Kostka radiowa. Rozmawia wprost z innymi kostkami — bez internetu, bez operatora, bez abonamentu. Telefon jest tylko ekranem i klawiaturą."],["Jeden przycisk, pięć gestów","<b>klik</b> — następny ekran kostki.<br><b>dwa kliki</b> — tryb ninja: cisza i ciemność.<br><b>trzy sekundy</b> — hotspot Wi-Fi (po włączeniu zasilania startuje też sam), hasło pokazuje ekran.<br><b>trzy kliknięcia</b> — przełącznik radia: SIEĆ (kostka przekazuje cudze wiadomości dalej) albo SAM (nadaje tylko Twoje). Fabrycznie SIEĆ. Aktualny tryb pokazuje strona SIEĆ na ekranie kostki, a wybór zostaje po odłączeniu prądu.<br><b>dziesięć sekund</b> — WYMAZANIE kostki. Odliczanie zaczyna się po szóstej sekundzie, puszczenie przycisku anuluje."],["Jak wołać o pomoc","Zakładka ALARM, jeden duży przycisk. Alarm powtarza się co minutę, dopóki nie naciśniesz ANULUJ ALARM. Licznik pokazuje, ilu różnych sąsiadów odezwało się po alarmie — wspólny kanał nie daje potwierdzeń odbioru i nikt nie może ich obiecać."],["Dwie drogi rozmowy","<b>KANAŁ</b> słyszą wszyscy w zasięgu.<br><b>KONTAKTY</b> to rozmowa z jedną osobą, szyfrowana do niej. Jeśli treść ma zostać między wami, pisz w KONTAKTACH."],["Kontakt na odległość","Osoby w zasięgu radia dodają się same. Kogoś dalej — np. rodzinę w innym mieście — dodajesz kodem: USTAW → POKAŻ MÓJ KOD, wyślij dowolną drogą (SMS, e-mail), a kod od niej wklej w DODAJ KONTAKT Z KODU. Wymieńcie się w obie strony. Wiadomość dojdzie, jeśli między wami istnieje łańcuch węzłów sieci."],["Co mówi dioda","biały błysk — kostka właśnie wstała<br>niebieski błysk — telefon się połączył<br>magenta — czeka wiadomość<br>niebieski, powoli pulsuje — hotspot działa<br>zielony puls co trzy sekundy — wszystko gra<br>ciemno — tryb ninja"],["Jak daleko sięga","Na parterze kilkaset metrów. Na zewnątrz kilka kilometrów. Przekaźnik na dachu 5–10 km, w wysokim punkcie 30–40 km. To liczby podawane przez społeczność, nie nasz pomiar. Decyduje wysokość i to, co stoi po drodze — nie cena sprzętu."],["Czego to NIE robi","<b>Wspólnego kanału słucha każdy</b>, kto ma taką kostkę: klucz jest w otwartym kodzie. I każdy może na nim napisać, podpisując się dowolną nazwą — nie ufaj samemu podpisowi.<br><br><b>Radio da się namierzyć.</b> Zawsze. Alarm nadaje co minutę i na tym polega jego działanie.<br><br><b>Tryb ninja</b> wycisza kostkę dla ludzi obok, nie dla odbiornika.<br><br><b>Kto zabierze kostkę</b>, odczyta z niej wiadomości i będzie mógł pisać w Twoim imieniu. Na to jest wymazanie."],["Gdy coś nie działa","<b>Brak łączności</b> — sprawdź, czy telefon jest w sieci kostki. Hotspot startuje sam po włączeniu zasilania; później włączasz go, trzymając przycisk trzy sekundy.<br><b>Nikogo nie słychać</b> — sprawdź, czy obie anteny są przykręcone.<br><b>Pusta lista sąsiadów</b> — naciśnij ROZGŁOŚ w USTAW i poczekaj chwilę."]],"en":[["What this is","A radio cube. It talks directly to other cubes — no internet, no operator, no subscription. Your phone is only its screen and keyboard."],["One button, five gestures","<b>click</b> — next screen on the cube.<br><b>double click</b> — ninja mode: silent and dark.<br><b>three seconds</b> — Wi-Fi hotspot (it also starts by itself at power-on), password shown on screen.<br><b>three clicks</b> — radio switch: SIEC (the cube carries other people's messages onward) or SAM (it transmits only yours). SIEC from the factory. The current mode is shown on the cube's SIEC page, and the choice survives a power cut.<br><b>ten seconds</b> — WIPE the cube. The countdown starts after the sixth second; releasing the button cancels."],["Calling for help","The SOS tab, one large button. The alarm repeats every minute until you press CANCEL ALARM. The counter shows how many different neighbours have been heard from since — the shared channel gives no delivery confirmations and nobody can promise them."],["Two ways to talk","<b>CHANNEL</b> is heard by everyone in range.<br><b>CONTACTS</b> is a conversation with one person, encrypted to them. If it should stay between you, write in CONTACTS."],["Contact at a distance","People in radio range add themselves. Someone farther away \u2014 family in another city \u2014 you add by code: SETTINGS \u2192 SHOW MY CODE, send it any way you like (SMS, e-mail), and paste theirs into ADD CONTACT FROM CODE. Exchange both ways. A message will arrive if a chain of network nodes exists between you."],["What the LED says","white flash — the cube has just started<br>blue flash — a phone connected<br>magenta — a message is waiting<br>blue, slowly pulsing — the hotspot is on<br>green pulse every three seconds — all is well<br>dark — ninja mode"],["How far it reaches","A few hundred metres on the ground floor. A few kilometres outdoors. A repeater on a roof 5–10 km, on a high point 30–40 km. These are figures reported by the community, not our measurement. Height and what stands in the way decide — not the price of the hardware."],["What it does NOT do","<b>Anyone with a cube like this hears the shared channel</b>: the key is in open source code. And anyone can write on it under any name — do not trust a signature alone.<br><br><b>Radio can be located.</b> Always. The alarm transmits every minute and that is how it works.<br><br><b>Ninja mode</b> silences the cube for people nearby, not for a receiver.<br><br><b>Whoever takes the cube</b> will read your messages and be able to write in your name. That is what the wipe is for."],["When something is wrong","<b>No link</b> — check that the phone is on the cube's network. The hotspot starts by itself at power-on; hold the button for three seconds to start it later.<br><b>Nobody is heard</b> — check that both antennas are screwed on.<br><b>Empty neighbour list</b> — press ANNOUNCE in SETTINGS and wait a moment."]]};
+var PORADNIK={"pl":[["Czym to jest","Kostka radiowa. Rozmawia wprost z innymi kostkami — bez internetu, bez operatora, bez abonamentu. Telefon jest tylko ekranem i klawiaturą."],["Jeden przycisk, pięć gestów","<b>klik</b> — następny ekran kostki.<br><b>dwa kliki</b> — tryb ninja: cisza i ciemność.<br><b>trzy sekundy</b> — hotspot Wi-Fi (po włączeniu zasilania startuje też sam), hasło pokazuje ekran.<br><b>trzy kliknięcia</b> — przełącznik radia: SIEĆ (kostka przekazuje cudze wiadomości dalej) albo SAM (nadaje tylko Twoje). Fabrycznie SIEĆ. Aktualny tryb pokazuje strona SIEĆ na ekranie kostki, a wybór zostaje po odłączeniu prądu.<br><b>dziesięć sekund</b> — WYMAZANIE kostki. Odliczanie zaczyna się po szóstej sekundzie, puszczenie przycisku anuluje."],["Jak wołać o pomoc","Zakładka ALARM, jeden duży przycisk. Alarm powtarza się co minutę, dopóki panel jest otwarty i nie naciśniesz ANULUJ ALARM — zablokowany telefon przerywa powtarzanie, więc zostaw ekran włączony. Licznik pokazuje, ilu różnych sąsiadów odezwało się po alarmie — wspólny kanał nie daje potwierdzeń odbioru i nikt nie może ich obiecać."],["Dwie drogi rozmowy","<b>KANAŁ</b> słyszą wszyscy w zasięgu.<br><b>KONTAKTY</b> to rozmowa z jedną osobą, szyfrowana do niej. Jeśli treść ma zostać między wami, pisz w KONTAKTACH."],["Kontakt na odległość","Osoby w zasięgu radia dodają się same. Kogoś dalej — np. rodzinę w innym mieście — dodajesz kodem: USTAW → POKAŻ MÓJ KOD, wyślij dowolną drogą (SMS, e-mail), a kod od niej wklej w DODAJ KONTAKT Z KODU. Wymieńcie się w obie strony. Wiadomość dojdzie, jeśli między wami istnieje łańcuch węzłów sieci."],["Co mówi dioda","biały błysk — kostka właśnie wstała<br>niebieski błysk — telefon się połączył<br>magenta — czeka wiadomość<br>niebieski, powoli pulsuje — hotspot działa<br>zielony puls co trzy sekundy — wszystko gra<br>ciemno — tryb ninja"],["Jak daleko sięga","Na parterze kilkaset metrów. Na zewnątrz kilka kilometrów. Przekaźnik na dachu 5–10 km, w wysokim punkcie 30–40 km. To liczby podawane przez społeczność, nie nasz pomiar. Decyduje wysokość i to, co stoi po drodze — nie cena sprzętu."],["Czego to NIE robi","<b>Wspólnego kanału słucha każdy</b>, kto ma taką kostkę: klucz jest w otwartym kodzie. I każdy może na nim napisać, podpisując się dowolną nazwą — nie ufaj samemu podpisowi.<br><br><b>Radio da się namierzyć.</b> Zawsze. Alarm nadaje co minutę i na tym polega jego działanie.<br><br><b>Tryb ninja</b> wycisza kostkę dla ludzi obok, nie dla odbiornika.<br><br><b>Kto zabierze kostkę</b>, odczyta z niej wiadomości i będzie mógł pisać w Twoim imieniu. Na to jest wymazanie."],["Gdy coś nie działa","<b>Brak łączności</b> — sprawdź, czy telefon jest w sieci kostki. Hotspot startuje sam po włączeniu zasilania; później włączasz go, trzymając przycisk trzy sekundy.<br><b>Nikogo nie słychać</b> — sprawdź, czy obie anteny są przykręcone.<br><b>Pusta lista sąsiadów</b> — naciśnij ROZGŁOŚ w USTAW i poczekaj chwilę."]],"en":[["What this is","A radio cube. It talks directly to other cubes — no internet, no operator, no subscription. Your phone is only its screen and keyboard."],["One button, five gestures","<b>click</b> — next screen on the cube.<br><b>double click</b> — ninja mode: silent and dark.<br><b>three seconds</b> — Wi-Fi hotspot (it also starts by itself at power-on), password shown on screen.<br><b>three clicks</b> — radio switch: SIEC (the cube carries other people's messages onward) or SAM (it transmits only yours). SIEC from the factory. The current mode is shown on the cube's SIEC page, and the choice survives a power cut.<br><b>ten seconds</b> — WIPE the cube. The countdown starts after the sixth second; releasing the button cancels."],["Calling for help","The SOS tab, one large button. The alarm repeats every minute while the panel is open and until you press CANCEL ALARM — a locked phone stops the repeats, so keep the screen on. The counter shows how many different neighbours have been heard from since — the shared channel gives no delivery confirmations and nobody can promise them."],["Two ways to talk","<b>CHANNEL</b> is heard by everyone in range.<br><b>CONTACTS</b> is a conversation with one person, encrypted to them. If it should stay between you, write in CONTACTS."],["Contact at a distance","People in radio range add themselves. Someone farther away \u2014 family in another city \u2014 you add by code: SETTINGS \u2192 SHOW MY CODE, send it any way you like (SMS, e-mail), and paste theirs into ADD CONTACT FROM CODE. Exchange both ways. A message will arrive if a chain of network nodes exists between you."],["What the LED says","white flash — the cube has just started<br>blue flash — a phone connected<br>magenta — a message is waiting<br>blue, slowly pulsing — the hotspot is on<br>green pulse every three seconds — all is well<br>dark — ninja mode"],["How far it reaches","A few hundred metres on the ground floor. A few kilometres outdoors. A repeater on a roof 5–10 km, on a high point 30–40 km. These are figures reported by the community, not our measurement. Height and what stands in the way decide — not the price of the hardware."],["What it does NOT do","<b>Anyone with a cube like this hears the shared channel</b>: the key is in open source code. And anyone can write on it under any name — do not trust a signature alone.<br><br><b>Radio can be located.</b> Always. The alarm transmits every minute and that is how it works.<br><br><b>Ninja mode</b> silences the cube for people nearby, not for a receiver.<br><br><b>Whoever takes the cube</b> will read your messages and be able to write in your name. That is what the wipe is for."],["When something is wrong","<b>No link</b> — check that the phone is on the cube's network. The hotspot starts by itself at power-on; hold the button for three seconds to start it later.<br><b>Nobody is heard</b> — check that both antennas are screwed on.<br><b>Empty neighbour list</b> — press ANNOUNCE in SETTINGS and wait a moment."]]};
 /* Poradnik jest DANYMI, nie znacznikami: trzy jezyki tego samego tekstu w HTML
    dalyby trzy kopie do utrzymania i trzy okazje, zeby sie rozjechaly. */
 function rysujPoradnik(){
@@ -1346,7 +1458,7 @@ function odczytajStan(){
       $("f-wifi").value=String(d.ssid).replace(/^Biper-/,"");
     /* Wersja z KOSTKI, nie z pliku panelu: przy kilku kostkach i kilku
        wydaniach dziennie czlowiek musi widziec, ktory system tu dziala. */
-    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel v0.17 / K5";
+    if(d.os)$("ver").textContent="Biper OS v"+d.os+" \u00b7 panel "+PANEL_VER;
   }).catch(function(){ $("s-nazwa").textContent=tr("stan_brak") })
 }
 
@@ -1454,11 +1566,25 @@ function drawThread(){
   var n=nodes[openThread],h="";
   for(var i=0;i<n.msgs.length;i++){
     var m=n.msgs[i];
+    /* szew miedzy archiwum z telefonu a zywa sesja */
+    if(i>0&&n.msgs[i-1].h&&!m.h)h+='<p class="meta" style="text-align:center;opacity:.55">'+tr("hist_sep")+'</p>';
     h+='<div class="msg'+(m.me?" me":"")+'"><p class="meta">'
       +((m.me&&m.st)||msgMeta(m.me,n.name,m.t||"",m.snr,m.path))+"</p>"+esc(m.body)+"</div>"}
   var f=$("dfeed");f.innerHTML=h;
   drawKarta();
-  if(f.lastChild)f.lastChild.scrollIntoView({block:"end"})}
+  /* scrollIntoView(block:end) dobija dymek do DOLU OKNA i nie wie o stalej
+     nakladce (pasek szybkich odpowiedzi + NADAJ) — ostatnia wiadomosc ladowala
+     pod paskiem, a padding-bottom maina zostawal nizej, nieprzewiniety
+     (pomiar 31.08: 98 px przeslony). Przewiniecie na sam dol strony stawia
+     padding przy krawedzi, a dymek nad paskiem. */
+  if(f.lastChild){var doDolu=function(){
+      var sk=document.querySelector("main");
+      if(sk)sk.scrollTop=sk.scrollHeight;            /* main bywa wlasnym scrollerem */
+      window.scrollTo(0,document.documentElement.scrollHeight)};
+    /* drugi przebieg po nastepnej klatce: klasa z-paskiem (padding-bottom
+       kontenera) potrafi wejsc PO drawThread — scroll liczony przed nia
+       zostawal 74 px za krotko (pomiar 31.08) */
+    doDolu();requestAnimationFrame(function(){requestAnimationFrame(doDolu)})}}
 /* Mini-karta kontaktu nad rozmowa: gorne 2/3 ekranu DM bylo pusta siatka,
    a jedyne, czego sie tam szuka, to "jak dobrze go slychac i ktoredy".
    Swiezosc ("slychac bylo X temu") zostaje w pasku u gory — bez dublowania.
@@ -1521,15 +1647,16 @@ function odezwalSie(pfx){
   var ring=document.querySelector('.hop[data-h="'+Math.min(n,HOP_RINGS)+'"]');
   if(ring)ring.className="hop ack";
 }
-function addMsg(feedId,who,body,snr,me,alarm){
+function addMsg(feedId,who,body,snr,me,alarm,t,live){
   if(feedId==="feed")czyscPustke();
-  if(!me)eterZdarzenie();
+  if(!me&&live!==false)eterZdarzenie();
   var d=document.createElement("div");
   d.className="msg"+(me?" me":"")+(alarm?" alarm":"");
-  d.innerHTML='<p class="meta">'+msgMeta(me,who,hhmm(),snr)+"</p>"+esc(body);
+  d.innerHTML='<p class="meta">'+msgMeta(me,who,t||hhmm(),snr)+"</p>"+esc(body);
   if(feedId==="feed"&&me)ostatniDomKanal=d;
   $(feedId).appendChild(d);
-  d.scrollIntoView({block:"end"})}
+  d.scrollIntoView({block:"end"});
+  return d}
 /* Cudzyslowy MUSZA byc kodowane: esc() trafia takze do ATRYBUTU (title= na
    kropce radaru), a nazwa wezla to 32 bajty dowolnej tresci przychodzace
    Z POWIETRZA. Bez tego ktos w zasiegu radia nazywa swoj wezel tak, by wyjsc
@@ -1543,9 +1670,9 @@ $("cs").onclick=function(){
   /* Straznik, nie podpowiedz: powyzej limitu mostek wyrzuca ramke po cichu,
      wiec lepiej nie wyslac i powiedziec, niz udac, ze poszlo. */
   if(bajtow(v)>limitBajtow()){odswiezLicznik();el.focus();return;}
-  if(chatTarget==="chan"){sendChan(v);addMsg("feed",selfName,v,null,true,false)}
-  else{sendDm(chatTarget,v);
-    nodes[chatTarget].msgs.push({me:true,body:v,t:hhmm()});drawThread()}
+  if(chatTarget==="chan"){var dch=addMsg("feed",selfName,v,null,true,false);sendChan(v,"chan",dch)}
+  else{var mdm={me:true,body:v,t:hhmm()};nodes[chatTarget].msgs.push(mdm);
+    sendDm(chatTarget,v,mdm);saveHist();drawThread()}
   el.value="";odswiezLicznik()};
 $("ci").oninput=odswiezLicznik;
 $("ci").onkeydown=function(e){
@@ -1577,7 +1704,17 @@ $("b-eksport").onclick=function(){
   ws.send(u8([CMD.EXPORT]))};
 $("b-kopiuj").onclick=function(){
   var self=this,txt=$("f-kod").value;
-  function fallback(){var e=$("f-kod");e.style.display="block";e.focus();e.select();try{document.execCommand("copy")}catch(_){}flashLabel(self,tr("prof_skopiowano"),"b_kopiuj")}
+  function fallback(){
+    /* iOS: select() na readonly textarea bywa martwe, a wynik execCommand byl
+       ignorowany — "skopiowano" swiecilo przy pustym schowku (audyt K-2).
+       Na czas kopiowania zdejmujemy readonly, zaznaczamy jawnie i mowimy
+       PRAWDE o wyniku; przy porazce zaznaczenie zostaje do recznego Kopiuj. */
+    var e=$("f-kod"),ok=false;
+    e.style.display="block";e.readOnly=false;
+    e.focus();try{e.setSelectionRange(0,e.value.length)}catch(_){try{e.select()}catch(__){}}
+    try{ok=document.execCommand("copy")}catch(_){}
+    e.readOnly=true;
+    flashLabel(self,tr(ok?"prof_skopiowano":"prof_recznie"),"b_kopiuj")}
   if(navigator.clipboard&&navigator.clipboard.writeText)
     navigator.clipboard.writeText(txt).then(function(){flashLabel(self,tr("prof_skopiowano"),"b_kopiuj")},fallback);
   else fallback()};
@@ -1585,14 +1722,19 @@ $("b-import").onclick=function(){
   var self=this;
   if(!linked){flashLabel(self,tr("brak_lacza"),"b_import");return}
   var raw=$("f-import").value.replace(/\s+/g,"");
-  var m=raw.match(/^(?:BIPER1:)?([A-Za-z0-9+\/=]+)$/);
+  /* Kod wolno wkleic z calym otoczeniem ("Moj kod: BIPER1:xxx — pozdrawiam") —
+     wyluskujemy od prefiksu do pierwszego znaku spoza base64, a padding "="
+     konczy kod twardo (litery doklejone WPROST za kodem bez zadnego znaku
+     przestankowego nie sa odroznialne od kodu — takie skazenie uczciwie
+     odbije podpis na kostce). Goly base64 bez prefiksu przyjmujemy jak dotad. */
+  var m=raw.match(/BIPER1:([A-Za-z0-9+\/]+={0,2})/)||raw.match(/^([A-Za-z0-9+\/]+={0,2})$/);
   if(!m){flashLabel(self,tr("prof_zly"),"b_import");return}
   var bytes;
   try{bytes=zB64(m[1])}catch(_){flashLabel(self,tr("prof_zly"),"b_import");return}
   if(bytes.length<99||bytes.length>174){flashLabel(self,tr("prof_zly"),"b_import");return} /* 174: MAX_FRAME_SIZE=176 minus [18]+dlugosc — walidacja 250 przepuszczala kody, ktorych transport i tak by ucial (Kimi B-12.1) */
   var f=new Uint8Array(1+bytes.length);f[0]=CMD.IMPORT;f.set(bytes,1);
   czekamNaImport=true;
-  ws.send(f)};
+  ws.send(f);pendPush("import")};
 $("b-wifi").onclick=function(){
   var self=this, w=$("f-wifi").value.trim().toUpperCase();
   if(w && !/^[A-Z]{2,4}$/.test(w)){flashLabel(self,tr("wifi_zle"),"b_wifi");return}
@@ -1605,7 +1747,7 @@ $("b-adv").onclick=function(){
      i piec razy zajmowal eter. Sasiedni ZAPISZ miga „zapisano", wiec kontrast
      byl wyrazny. */
   if(!linked){flashLabel(this,tr("brak_lacza"),"b_adv");return}
-  ws.send(u8([CMD.ADVERT,1]));
+  ws.send(u8([CMD.ADVERT,1]));pendPush("other");
   flashLabel(this,tr("wyslano"),"b_adv");
   powiedz(tr("wyslano"))};
 function ustawMotyw(v){
@@ -1624,10 +1766,13 @@ $("f-lang").onchange=function(){ustawJezyk(this.value)};
   try{m=localStorage.getItem(MOTYW_KEY);j=localStorage.getItem(JEZYK_KEY)}catch(e){}
   if(!m&&window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches)m="light";
   if(m)ustawMotyw(m);
+  /* Jezyk spoza slownika (np. "ja" zapisane w sierpniu, gdy panel go mial)
+     wywalal tr() przed connect() — panel martwy na zawsze (audyt C-16). */
+  if(j&&!L[j])j=null;
   if(!j){var n=(navigator.language||"en").slice(0,2);j=(n==="pl")?n:"en"}
   if(j!==lang)ustawJezyk(j);
 })();
-$("ver").textContent="Biper panel v0.17 / K5 \u00b7 OS: \u2014";
+$("ver").textContent="Biper panel "+PANEL_VER+" \u00b7 OS: \u2014";
 /* Podpowiedz „dodaj do ekranu glownego" zdjeta z ekranu POMOC (18.08 audyt
    UX): byl to jedyny element marketingowy w calym panelu i stal akurat pod
    przyciskiem alarmu, dublujac sekcje NA EKRAN GLOWNY w USTAW. Instrukcja
@@ -1641,12 +1786,69 @@ function saveBackup(){
     var c={};
     for(var p in nodes)if(nodes[p].raw)c[p]=nodes[p].raw;
     if(!Object.keys(c).length)return;
-    localStorage.setItem(BAK_KEY,JSON.stringify({name:selfName,ts:now(),contacts:c}));
+    /* Po reinstalacji (nowa tozsamosc) pierwszy sasiad nadpisywal cala
+       ksiazke poprzedniej kostki, zanim ktos zdazyl nacisnac PRZYWROC
+       (audyt C-14): pelniejsza kopia INNEJ tozsamosci zostaje, dopoki nie
+       zostanie przywrocona. */
+    var old=loadBackup();
+    if(!restoredOnce&&old&&old.id&&old.id!==histKey&&Object.keys(old.contacts||{}).length>Object.keys(c).length)return;
+    localStorage.setItem(BAK_KEY,JSON.stringify({id:histKey,name:selfName,ts:now(),contacts:c}));
     drawBackup();
   }catch(e){}}
 function loadBackup(){
   try{var v=localStorage.getItem(BAK_KEY);return v?JSON.parse(v):null}
   catch(e){return null}}
+/* ===== M-1: historia rozmow w telefonie (0.9.1) =====
+   Wiadomosci zyly wylacznie w pamieci karty — odswiezenie strony, restart
+   przegladarki albo drugi telefon = pusta lista (audyt 31.08, M-1). Archiwum
+   mieszka w localStorage TEGO telefonu, pod kluczem tozsamosci kostki
+   (reinstalacja = nowa tozsamosc = czysty start, stare watki nie mieszaja).
+   Zapisujemy tresc, kierunek, godzine i DOSZLO — bez HTML-u i bez SNR/tras
+   (odtwarzane stampem przy wczytaniu; body i tak przechodzi esc()). */
+var HIST_LIM=100,HIST_BUDZET=200000,histT=0,histKey="",histWczytana=false;
+function saveHist(){if(!histKey)return;clearTimeout(histT);histT=setTimeout(zapiszHistorie,1000)}
+function zapiszHistorie(){
+  if(!histKey)return;
+  try{
+    function pak(lim){
+      var h={};
+      for(var p in nodes){var ms=nodes[p].msgs;if(!ms||!ms.length)continue;
+        var out=[];
+        for(var i=Math.max(0,ms.length-lim);i<ms.length;i++){var m=ms[i];
+          out.push({me:m.me?1:0,body:String(m.body||"").slice(0,300),t:m.t||"",
+            p:(m.potw||(m.st&&String(m.st).indexOf("st-ok")>=0))?1:0})}
+        h[p]={n:nodes[p].name||"",k:nodes[p].pub||"",m:out}}
+      return JSON.stringify({v:1,ts:now(),w:h})}
+    var lim=HIST_LIM,s=pak(lim);
+    while(s.length>HIST_BUDZET&&lim>10){lim=lim>>1;s=pak(lim)}
+    localStorage.setItem(histKey,s);drawHistInfo();
+  }catch(_){}}
+function wczytajHistorie(){
+  if(!histKey||histWczytana)return;
+  histWczytana=true;
+  try{
+    var v=localStorage.getItem(histKey);if(!v){drawHistInfo();return}
+    var d=JSON.parse(v);if(!d||d.v!==1||!d.w){drawHistInfo();return}
+    for(var p in d.w){var w=d.w[p];
+      if(!nodes[p])nodes[p]={name:w.n||("~"+p.slice(0,4)),unread:0,msgs:[],last:0,stale:false};
+      if(w.k&&!nodes[p].pub)nodes[p].pub=w.k;
+      if(nodes[p].msgs.length)continue;   /* zywa sesja > archiwum */
+      var ms=[];
+      for(var i=0;i<w.m.length;i++){var m=w.m[i];
+        ms.push({me:!!m.me,body:m.body,t:m.t,h:1,
+          st:m.me?stamp(m.p?"confirmed":"sent",m.t,m.p?"st-ok":""):undefined})}
+      nodes[p].msgs=ms}
+    drawNodes();drawHistInfo();
+  }catch(_){try{localStorage.removeItem(histKey)}catch(__){}}}
+function drawHistInfo(){
+  var el=$("hist-info");if(!el)return;var n=0;
+  try{var v=histKey&&localStorage.getItem(histKey);
+    if(v){var d=JSON.parse(v);n=Object.keys((d&&d.w)||{}).length}}catch(_){}
+  el.textContent=tr("hist_info").replace("%n",n)}
+$("b-hist-czysc").onclick=function(){
+  try{if(histKey)localStorage.removeItem(histKey)}catch(_){}
+  /* watki zywej sesji zostaja na ekranie; znika tylko archiwum */
+  drawHistInfo();flashLabel(this,tr("hist_wycz"),"b_histclr")};
 function drawBackup(){
   var b=loadBackup(),el=$("bak-info");
   if(!b){el.textContent=tr("bak_none");$("b-restore").disabled=true;return}
@@ -1663,9 +1865,10 @@ $("b-restore").onclick=function(){
     if(i<frames.length){
       var f=hexBytes(frames[i++]);
       f[0]=CMD.ADD_CONTACT;
-      ws.send(f);
+      ws.send(f);pendPush("other");
       setTimeout(step,RESTORE_GAP_MS);
     }else{
+      restoredOnce=true;
       if(b.name)sendName(b.name);
       flashLabel(btn,tr("restored").replace("%n",frames.length),"b_restore",
         function(){ws.send(u8([CMD.GET_CONTACTS]))});
@@ -1673,6 +1876,7 @@ $("b-restore").onclick=function(){
   step()};
 /* ===== mock cube (dev/demo: ?mock=1) ===== */
 window.MOCK=/[?&]mock=1/.test(location.search);
+window.MOCK_IMP=parseInt((location.search.match(/[?&]imp=(\d)/)||[])[1]||"0",10);
 /* W podgladzie nie ma serwera kostki, wiec /stan odpowiadaloby 404 i karta
    stanu — jedyne miejsce, ktore mowi o urzadzeniu — bylaby pusta akurat tam,
    gdzie ja ogladamy. Podstawiamy odpowiedz o tym samym ksztalcie co prawdziwa. */
@@ -1701,7 +1905,7 @@ function FakeWS(){var s=this;s.binaryType="";
     push32(f,now()-agoS);
     f=f.concat([0,0,0,0, 0,0,0,0, 0,0,0,0]);
     return f}
-  var zosia=[0xaa,1,2,3,4,5],marek=[0xbb,9,8,7,6,5],mockChanN=0,mockDmN=0;
+  var zosia=[0xaa,1,2,3,4,5],marek=[0xbb,9,8,7,6,5],mockChanN=0,mockDmN=0,mockTag=0;
   /* Kontakt "z kodu": pojawia sie na liscie dopiero PO imporcie — filmy
      poradnikowe pokazuja prawdziwy skutek, nie sama animacje przycisku. */
   var helena=[0xcc,4,4,2,2,7],importOk=false;
@@ -1722,11 +1926,22 @@ function FakeWS(){var s=this;s.binaryType="";
       if(importOk)reply(contact(helena,"Helena",30,PATH_DIRECT),330);
       reply([RESP.C_END],360)}
     else if(c===CMD.EXPORT){
-      /* RESP 11: [11][pakiet advertu] — trescia atrapy sa stale bajty, bo
-         panel i tak pokazuje tylko base64 z prefiksem BIPER1:. */
-      var pak=[0x11,0x22,0x33].concat(zosia).concat([7,7,7,7],new Array(28).fill(0x5a));
+      /* RESP 11: [11][pakiet advertu]. Atrapa MUSI miec realne rozmiary:
+         naglowek+path+pub32+ts4+podpis64+flagi+nazwa = 113 B. Stary 41-bajtowy
+         skrot oblewal walidacje dlugosci panelu (99-174 B) i test QC 31.08
+         zglaszal "kod nieprawidlowy" na wlasnym kodzie atrapy. */
+      var pak=[0x11,0].concat(new Array(32).fill(0x42),[7,7,7,7],new Array(64).fill(0x5a),[0x91]);
+      pushText(pak,"Biper-15FE");
       reply([11].concat(pak),250)}
-    else if(c===CMD.IMPORT){importOk=true;reply([RESP.OK],250)}
+    else if(c===CMD.IMPORT){
+      /* Dialekt 0.9.1: [0xB6][status][nazwa] po weryfikacji NA KOSTCE.
+         Atrapa musi mowic dokladnie jezykiem firmware (lekcja 0.8.14:
+         klamiacy mock ukryl martwe DM-y). ?imp=2/3/4 wymusza wariant
+         do zrzutow QC; domyslnie 1 = dodano Helene. */
+      var impSt=window.MOCK_IMP||1;
+      if(impSt<3)importOk=true;
+      var fImp=[RESP.IMP,impSt];pushText(fImp,impSt===4?"Biper-15FE":"Helena");
+      reply(fImp,250)}
     else if(c===CMD.GET_BATT){/* 0 mV: C6L nie ma ogniwa ani pomiaru — atrapa
       ma mowic to samo, co plytka, inaczej makiety pokazuja nieistniejacy
       pomiar */reply([RESP.BATT,0,0,0,0,0,0,0,0,0,0])}
@@ -1742,11 +1957,13 @@ function FakeWS(){var s=this;s.binaryType="";
       var r=[RESP.CHAN_V3,[26,14,30][mockChanN%3],0,0,0,2,0,0,0,0,0];
       pushText(r,chTeksty[(mockChanN++)%chTeksty.length]); /* text from offset 11 */
       reply(r,3300)}
-    else if(c===CMD.SEND_TXT){reply([RESP.SENT,0,1,0,0,0,1,0,0,0]);
+    else if(c===CMD.SEND_TXT){var tg=(++mockTag)&255;reply([RESP.SENT,0,tg,0,0,0,1,0,0,0]);
       /* Tag ACK = tag z RESP.SENT (bajty 2-5). Goly [0x82] nigdy sie nie
          dopasowywal, wiec podglad wiecznie pokazywal NADANO i ukrywal caly
-         stan DOSZLO — recenzent wzial to za brak drabinki stanow. */
-      reply([PUSH.CONFIRMED,1,0,0,0],1500);
+         stan DOSZLO — recenzent wzial to za brak drabinki stanow. Tag ROSNIE
+         jak w firmware: staly tag 1 dla kazdej wiadomosci maskowal w podgladzie
+         dopasowanie potwierdzen (0.9.2). */
+      reply([PUSH.CONFIRMED,tg,0,0,0],1500);
       var dmTeksty=["Jasne, czekam przy moście.",
         "Dobrze, będę za pół godziny.",
         "Widziałam Marka na wzgórzu, machał."];
@@ -1760,6 +1977,7 @@ function FakeWS(){var s=this;s.binaryType="";
       reply([PUSH.ADVERT].concat(zosia).concat(new Array(26).fill(0)),900)}
     else if(c===CMD.ADD_CONTACT){reply([RESP.OK])}
     else if(c===CMD.SET_NAME){reply([RESP.OK])}
+    else if(c===CMD.SET_TIME){reply([RESP.OK])}   /* firmware odpowiada OK (MyMesh: CMD_SET_DEVICE_TIME) — atrapa tez, inaczej kolejka komend rozjezdza sie tylko w podgladzie */
     else if(c===CMD.SYNC){reply([RESP.NO_MORE])}
     else if(c===CMD.GET_TIME){reply([RESP.CURR_TIME,0,0,0,0])}};
   s.close=function(){}}

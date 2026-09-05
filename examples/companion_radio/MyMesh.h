@@ -261,6 +261,11 @@ private:
   };
   int offline_queue_len;
   Frame offline_queue[OFFLINE_QUEUE_SIZE];
+#ifdef BIPER_AP
+  // BIPER: panel prosil o SYNC, gdy ring TX mostu byl pelny — wiadomosc zostala
+  // w kolejce, a loop() zapuka 0x83, gdy transport znow przyjmuje (audyt C-5).
+  bool biper_sync_deferred;
+#endif
 
   struct AckTableEntry {
     unsigned long msg_sent;

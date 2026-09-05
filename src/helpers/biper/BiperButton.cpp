@@ -48,6 +48,11 @@ static uint32_t biper_btn_down_since = 0;
 // announce a single one first.
 static uint8_t biper_btn_clicks = 0;
 static uint32_t biper_btn_released_at = 0;
+// Gesty liczymy dopiero od pierwszego ZWOLNIENIA po starcie. Przycisk
+// docisniety przy wpinaniu zasilania (etui, torba) trzymal licznik od bootu
+// i po dziesieciu sekundach wymazywal kostke bez niczyjej intencji
+// (audyt 05.09, C-1/P2-1).
+static bool biper_btn_seen_up = false;
 
 static bool read_input_reg(uint8_t* value) {
   Wire.beginTransmission(biper_exp_addr);
@@ -140,10 +145,25 @@ bool biper_button_init() {
 BiperButtonEvent biper_button_poll() {
   if (biper_exp_addr == 0) return BIPER_BTN_NONE;
   uint8_t input = 0;
-  if (!read_input_reg(&input)) return BIPER_BTN_NONE;
+  if (!read_input_reg(&input)) {
+    // Nieudany odczyt = NIE WIEMY, czy przycisk jest trzymany. Do 0.9.1 stan
+    // "wcisniety" zostawal, licznik trzymania rosl i seria bledow I2C po
+    // jednym udanym DOWN konczyla sie wymazaniem mimo zwolnienia (audyt
+    // 05.09, C-1). Od teraz: trzymanie liczy sie wylacznie z CIAGLYCH udanych
+    // odczytow; luka zeruje gest (kosztuje najwyzej powtorne nacisniecie).
+    biper_btn_was_down = false;
+    biper_btn_hold_sent = false;
+    biper_btn_clicks = 0;
+    return BIPER_BTN_NONE;
+  }
 
   const bool down = !((input >> BIPER_BTN_BIT) & 1);  // active low
   const uint32_t now = millis();
+
+  if (!biper_btn_seen_up) {
+    if (!down) biper_btn_seen_up = true;   // od tej chwili gesty sa czyjes
+    return BIPER_BTN_NONE;
+  }
 
   if (down) {
     if (!biper_btn_was_down) {  // edge: pressed
@@ -155,6 +175,7 @@ BiperButtonEvent biper_button_poll() {
     } else if (!biper_btn_hold_sent &&
                now - biper_btn_down_since >= BIPER_BTN_HOLD_MS) {
       biper_btn_hold_sent = true;
+      biper_btn_clicks = 0;   // klik sprzed przytrzymania nie wyskakuje po nim (C-42)
       Serial.printf("[BIPER_BTN] hold\n");
       return BIPER_BTN_HOLD;
     }

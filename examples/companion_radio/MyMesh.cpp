@@ -1,5 +1,7 @@
 #include "MyMesh.h"
 #include <helpers/UTF8Helpers.h>
+#include <helpers/AdvertDataHelpers.h>   // BIPER: parser nazwy przy imporcie kodu
+#include <helpers/biper/BiperLogic.h>    // BIPER: klasyfikacja wyniku importu (0xB6)
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
@@ -98,6 +100,11 @@
 #define RESP_ALLOWED_REPEAT_FREQ      26
 #define RESP_CODE_CHANNEL_DATA_RECV   27
 #define RESP_CODE_DEFAULT_FLOOD_SCOPE 28
+
+// BIPER: wynik importu kodu kontaktu: [0xB6][status][nazwa UTF-8...].
+// Statusy w helpers/biper/BiperLogic.h. Wartosc spoza zakresow upstreamu
+// (RESP 0-28, PUSH 0x80-0x8B) i naszego 0xB5 ("kostka zajeta").
+#define RESP_CODE_BIPER_IMPORT        0xB6
 
 #define MAX_CHANNEL_DATA_LENGTH       (MAX_FRAME_SIZE - 9)
 
@@ -263,7 +270,17 @@ float MyMesh::getAirtimeBudgetFactor() const {
   // pozwalalby urzadzeniu ratunkowemu zlamac prawo dokladnie wtedy, gdy
   // nadaje najwiecej. Realny ruch (SOS co minute ~1,7%) miesci sie z zapasem.
   // Getter, nie default prefs: wartosci z pliku/CLI nie moga tego podniesc.
-  return 9.0f;
+  //
+  // Pierwsza godzina po starcie: 19.0 = 5 % (audyt 05.09, C-6). Dispatcher
+  // liczy limit jako token bucket: pelny kredyt na starcie (10 % z godziny =
+  // 6 min) PLUS dopelnianie w tej samej godzinie — po restarcie dalo sie
+  // nadac ~20 % w pierwszej godzinie. Z polowa stawki przez pierwsze 60 min
+  // (kredyt startowy 3 min + 3 min dopelnienia) suma w tej godzinie nie
+  // przekracza 10 %; potem stawka wraca do 10 % i bucket pracuje jak dotad.
+  // Tyle wystarcza na wszystko, co kostka robi po starcie (advert ~0,5 s,
+  // SOS ~1,5 s/min); pole `tx_budget_ms` jest prywatne, wiec to jedyne
+  // miejsce, z ktorego mozna ten kredyt ograniczyc bez ruszania Dispatchera.
+  return millis() < 3600000UL ? 19.0f : 9.0f;
 #else
   return _prefs.airtime_factor;
 #endif
@@ -892,6 +909,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   // otwarciem panelu ladowal w kolejce w starym formacie i panel go po
   // cichu wyrzucal (audyt Kimi B-12.6).
   app_target_ver = 3;
+  biper_sync_deferred = false;
 #else
   app_target_ver = 0;
 #endif
@@ -1392,13 +1410,77 @@ void MyMesh::handleCmdFrame(size_t len) {
       }
     }
   } else if (cmd_frame[0] == CMD_IMPORT_CONTACT && len > 2 + 32 + 64) {
-    if (importContact(&cmd_frame[1], len - 1)) {
-      writeOKFrame();
+    // BIPER: weryfikacja PRZED odpowiedzia. Upstream odpowiadal OK po samym
+    // sparsowaniu, a podpis, wlasny klucz i stary stempel odrzucala dopiero
+    // petla zwrotna — po cichu. Panel mowil "dodano" przy kodzie z literowka,
+    // wlasnym i przeterminowanym (zgloszenia "kody profili sie nie zgadzaja";
+    // audyt 2026-08-31, K-1). Odpowiedz niesie tez NAZWE z kodu, zeby czlowiek
+    // widzial, KOGO dodal.
+    mesh::Packet* pkt = obtainNewPacket();
+    if (pkt == NULL) {
+      writeErrFrame(ERR_CODE_TABLE_FULL);
+    } else if (!pkt->readFrom(&cmd_frame[1], len - 1)
+            || pkt->getPayloadType() != PAYLOAD_TYPE_ADVERT
+            || pkt->payload_len < PUB_KEY_SIZE + 4 + SIGNATURE_SIZE) {
+      releasePacket(pkt);
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);   // panel: "kod nieprawidlowy"
     } else {
-      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+      mesh::Identity id;
+      memcpy(id.pub_key, &pkt->payload[0], PUB_KEY_SIZE);
+      uint32_t adv_timestamp;
+      memcpy(&adv_timestamp, &pkt->payload[PUB_KEY_SIZE], 4);
+      const uint8_t* signature = &pkt->payload[PUB_KEY_SIZE + 4];
+      const uint8_t* app_data = &pkt->payload[PUB_KEY_SIZE + 4 + SIGNATURE_SIZE];
+      int app_data_len = pkt->payload_len - (PUB_KEY_SIZE + 4 + SIGNATURE_SIZE);
+      if (app_data_len > MAX_ADVERT_DATA_SIZE) { app_data_len = MAX_ADVERT_DATA_SIZE; }
+
+      bool sig_ok;
+      {
+        // ta sama procedura, ktora adverty przechodza w Mesh::onRecvPacket
+        uint8_t message[PUB_KEY_SIZE + 4 + MAX_ADVERT_DATA_SIZE];
+        int msg_len = 0;
+        memcpy(&message[msg_len], id.pub_key, PUB_KEY_SIZE); msg_len += PUB_KEY_SIZE;
+        memcpy(&message[msg_len], &adv_timestamp, 4); msg_len += 4;
+        memcpy(&message[msg_len], app_data, app_data_len); msg_len += app_data_len;
+        sig_ok = id.verify(signature, message, msg_len);
+      }
+
+      AdvertDataParser parser(app_data, app_data_len);
+      if (!sig_ok || !parser.isValid() || !parser.hasName()) {
+        releasePacket(pkt);
+        writeErrFrame(ERR_CODE_ILLEGAL_ARG);   // podrobka albo uszkodzony kod
+      } else {
+        ContactInfo* known = lookupContactByPubKey(id.pub_key, PUB_KEY_SIZE);
+        uint8_t status = biper_import_status(self_id.matches(id.pub_key), known != NULL,
+                                             adv_timestamp,
+                                             known ? known->last_advert_timestamp : 0);
+        releasePacket(pkt);
+        // SELF i stary kod NIE ida do petli zwrotnej: tam i tak by przepadly,
+        // tyle ze bez slowa — a odpowiedz ma nazywac stan zgodny z prawda.
+        if ((status == BIPER_IMPORT_NOWY || status == BIPER_IMPORT_SWIEZY)
+            && !importContact(&cmd_frame[1], len - 1)) {
+          writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+        } else {
+          int nlen = strlen(parser.getName());
+          if (nlen > MAX_ADVERT_DATA_SIZE) { nlen = MAX_ADVERT_DATA_SIZE; }
+          out_frame[0] = RESP_CODE_BIPER_IMPORT;
+          out_frame[1] = status;
+          memcpy(&out_frame[2], parser.getName(), nlen);
+          _serial->writeFrame(out_frame, 2 + nlen);
+        }
+      }
     }
   } else if (cmd_frame[0] == CMD_SYNC_NEXT_MESSAGE) {
     int out_len;
+#ifdef BIPER_AP
+    // BIPER (audyt 05.09, C-5): wiadomosc schodzila z kolejki PRZED proba
+    // wyslania, a pelny ring TX mostu odrzuca ramke (writeFrame -> 0) — tresc
+    // ginela bez sladu. Przy zajetym transporcie zostawiamy ja w kolejce i
+    // zapamietujemy, ze panel czeka; loop() zapuka 0x83, gdy ring sie oprozni.
+    if (offline_queue_len > 0 && _serial->isWriteBusy()) {
+      biper_sync_deferred = true;
+    } else
+#endif
     if ((out_len = getFromOfflineQueue(out_frame)) > 0) {
       _serial->writeFrame(out_frame, out_len);
 #ifdef DISPLAY_CLASS
@@ -1408,6 +1490,15 @@ void MyMesh::handleCmdFrame(size_t len) {
       out_frame[0] = RESP_CODE_NO_MORE_MESSAGES;
       _serial->writeFrame(out_frame, 1);
     }
+#ifdef BIPER_AP
+  } else if (cmd_frame[0] == CMD_SET_RADIO_PARAMS || cmd_frame[0] == CMD_SET_RADIO_TX_POWER) {
+    // BIPER (audyt 05.09, P2-2): limit 10 % czasu antenowego i 22 dBm sa policzone
+    // dla pod-pasma 869,4-869,65 MHz. Zmiana czestotliwosci albo mocy przez
+    // protokol companion (most WS, USB) przenosilaby te same wartosci np. w
+    // 868,0-868,6 MHz, gdzie wolno 1 % i 25 mW e.r.p. Kostka Bipera nie ma
+    // "suwaka" — takze schowanego: te dwie komendy sa odrzucane.
+    writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
+#endif
   } else if (cmd_frame[0] == CMD_SET_RADIO_PARAMS) {
     int i = 1;
     uint32_t freq;
@@ -2266,6 +2357,17 @@ void MyMesh::loop() {
   } else {
     checkSerialInterface();
   }
+
+#ifdef BIPER_AP
+  // BIPER (audyt C-5): odlozony SYNC — transport znow wolny, wiec zapukaj 0x83,
+  // a panel sam wysle SYNC jeszcze raz. Bez tego wiadomosc lezalaby w kolejce
+  // az do nastepnego pusha z radia.
+  if (biper_sync_deferred && offline_queue_len > 0 && !_serial->isWriteBusy()) {
+    biper_sync_deferred = false;
+    uint8_t frame[1] = { PUSH_CODE_MSG_WAITING };
+    _serial->writeFrame(frame, 1);
+  }
+#endif
 
   // is there are pending dirty contacts write needed?
   if (dirty_contacts_expiry && millisHasNowPassed(dirty_contacts_expiry)) {

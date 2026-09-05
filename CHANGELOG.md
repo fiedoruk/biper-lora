@@ -9,6 +9,125 @@ see the README section "What is measured and what is not".
 
 Nothing yet.
 
+## v0.9.2 — 2026-09-05 — the audit release: the bridge lets go of the mesh, the button cannot wipe by accident
+
+Everything here comes from the 5 September code audit (Fable, cross-reviewed
+by Codex; report in the site repository, `docs/audits/CC-AUDYT-FIRMWARE-0.9.1-2026-09-05.md`).
+No feature work. Host tests 23/23, both environments build. Device evidence,
+5 Sep 2026, two Unit C6L cubes flashed with this build (app slot, identities
+kept): boot banner v0.9.2, radio entropy 27/32 and 28/32 distinct bytes,
+expander 0x43 configured, hotspot up in 95 ms with 221 kB heap after AP,
+boot advert emitted on both (48 s and 60 s, jitter), cube B received cube A's
+advert over the radio, stack headroom measured at idle: AP task 9764 B,
+screen task 2368 B. Not measured on this build yet: the phone pair test
+(DM with ACK), the button and wipe gestures, the advert reply (a USB monitor
+on the cube takes over the pushes, so the bridge path cannot be watched
+from serial), range and power draw.
+
+- **The WS bridge no longer holds the ring mutex while writing to the
+  socket.** `drainTx` copies one frame under the mutex and sends it outside;
+  the HTTP server's send timeout drops from 5 s to 2 s. Until now a phone
+  that fell asleep with a full TCP window blocked `send()` for the whole
+  timeout with the mutex held, and the mesh loop waited on that same mutex
+  in `writeFrame`/`checkRecvFrame` — the radio stalled in 5-second steps
+  exactly in a dense neighbourhood. (P1)
+- **The wipe gesture needs continuous, successful button reads.** A failed
+  I²C read used to keep the "pressed" state and the hold timer running, so a
+  run of bus errors after one real press could reach the ten-second wipe with
+  the button already released; and a button held from power-on (a case, a
+  bag) counted from boot. Now a failed read cancels the gesture, and no gesture
+  counts until the button has been seen released once after start. (P1)
+- **Own Wi-Fi word works.** `Preferences::getString` returns the length
+  including the terminator, so the 2–4 letter check never passed and the
+  chosen word never reached the SSID — the panel said "from the next window"
+  and the cube kept its drawn word. Letters are now counted with `strnlen`.
+- **Fragmented WebSocket frames are actually rejected.** The guard tested
+  `fragmented`, a transmit-only flag ESP-IDF never sets on received frames;
+  it now tests `final` and the CONTINUE opcode.
+- **Radio parameters cannot be changed through the companion protocol.**
+  `CMD_SET_RADIO_PARAMS` and `CMD_SET_RADIO_TX_POWER` answer
+  `ERR_CODE_UNSUPPORTED_CMD` in the Biper build: the 10 % airtime cap and
+  22 dBm are computed for 869.4–869.65 MHz, and moving the cube to
+  868.0–868.6 MHz would carry them where 1 % and 25 mW e.r.p. apply. For the
+  first hour after power-on the airtime factor is 19 (5 %): the upstream token
+  bucket starts full and refills within the same hour, which allowed up to
+  20 % in the first hour after a restart; half rate for that hour keeps it at
+  10 %.
+- **Advert reply fires for a neighbour we actually hear for the first
+  time.** It was bound to the `0x8A` push, which upstream emits only for
+  contacts it did NOT store; a freshly added neighbour arrived as `0x80` and
+  the reply meant to complete the pair never went out. The heard-table now
+  decides.
+- **A SYNC while the bridge's TX ring is full keeps the message.** The
+  offline queue used to pop the message before the transport accepted the
+  frame; a full ring meant a lost message. The message stays queued and the
+  cube re-tickles `0x83` once the ring drains.
+- **A socket that refuses frames is closed, not just forgotten**, and frames
+  are accepted only from the socket of the current session; a WS handshake
+  during window teardown is refused (teardown race).
+- **Expected-response FIFO for the OLED face** is filled when a command is
+  executed, not when it is queued; `ERR` also pops it; a session takeover
+  clears it. A failed login no longer blocks the next DM's CZEKAM/DOSZŁO.
+- **Feedback survives 24.9 days of uptime.** Melody and flash deadlines used
+  `0` as "start now", which the signed rollover comparison read as "far in
+  the past" once `millis()` passed 2³¹.
+- Ninja mode goes dark again after a cancelled wipe countdown; the wipe
+  rejection now fits the screen ("ZAJETE / SPROBUJ / ZNOWU"); a hold cancels
+  pending short clicks; `[BIPER_AP]` telemetry prints the stack headroom of
+  both layer tasks; a failed NVS open is logged.
+- **Panel v0.18.** Commands that expect an answer enter a queue in send
+  order and the answer is matched to the head: a DM's `RESP_SENT` and tag
+  land on the message that caused them (two quick sends no longer leave the
+  first one at NADANO forever), an advert's `OK` no longer stamps a channel
+  message, and cancelling an alarm waits for the cube's `OK` — on `ERR` or
+  "busy" the alarm stays armed and says so. Message times come from the
+  frame timestamp; backlog delivered by SYNC is not counted as a live
+  neighbour after an alarm. A different cube on the same address (second
+  cube, reinstall) gets its own history instead of mixing with the previous
+  one; a fuller backup of the previous identity is not overwritten before
+  RESTORE. A remembered language the panel no longer has (`ja`) falls back
+  instead of throwing before connect. Messages from a channel other than 0
+  are marked `#N`. The alarm text says what is true: it repeats while the
+  panel stays open.
+- Deferred, documented in the audit: alarm repetition inside the firmware
+  (architecture), moving the RF expander init out of the button module, a
+  dedicated I²C instance, a simulation banner for `?mock=1`.
+
+## v0.9.1 — 2026-08-31 — the codes tell the truth, the history stays on the phone
+
+Driven by the first field reports: "the profile codes do not match" when two
+Bipers try to add each other. The 31 Aug audit traced every report to the
+layer saying "done" without proof — never to the radio.
+
+- **Contact-code import tells the truth.** Until now the cube answered OK
+  after mere parsing; the signature, own-key and stale-timestamp checks ran
+  later, silently, in the loopback path — so a mistyped code, your own code
+  pasted "to test it", or an outdated screenshot all flashed "added" while
+  the contact list stayed empty. The handler now verifies the Ed25519
+  signature, rejects the cube's own code and stale codes BEFORE answering,
+  and the new response frame `0xB6 [status][name]` lets the panel say
+  *who* was added ("dodano: HELENA"). Four new host tests cover the
+  classification.
+- **Sending a code no longer fights the clipboard.** Under
+  `http://192.168.4.1` there is no `navigator.clipboard` and no
+  `navigator.share` (secure-context APIs), and the old fallback ignored
+  `execCommand`'s result — "copied" showed even with an empty clipboard.
+  New primary path: SEND BY SMS / SEND BY E-MAIL links with the bare code
+  in the message body. The copy fallback now selects properly and reports
+  failure honestly. The import field accepts a code pasted with
+  surrounding text and disables auto-capitalisation.
+- **The panel comes back when the phone wakes.** `visibilitychange`/
+  `pageshow` probe the socket immediately and a 90-second frame watchdog
+  closes zombie sockets that iOS leaves behind after the screen was locked.
+- **Chat history survives on the phone.** Threads are archived in the
+  browser's localStorage under the cube's identity key (a reinstall starts
+  clean), restored on the next connection under a "— new —" divider,
+  capped at 100 messages per thread / ~200 kB, with a CLEAR HISTORY button
+  in settings. Channel (group) messages are not archived in this release.
+- **Mock speaks the 0.9.1 dialect** — including a realistic 113-byte
+  export packet; the old 41-byte stub failed the panel's own length gate,
+  which is exactly the class of lie the 0.8.14 lesson warned about.
+
 ## v0.9.0 — 2026-08-20 — the panel is the interface: Bluetooth leaves the release
 
 An owner decision, not a patch: the shipped firmware is now the

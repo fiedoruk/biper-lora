@@ -71,7 +71,11 @@ public:
   // Rozkaz LOKALNY (WYMAZ z przycisku, adverty warstwy) — wlasny ring,
   // odporny na plukanie po przejeciu sesji panelu.
   bool onLocalCommand(const uint8_t* payload, size_t len);
-  void drainTx();  // runs inside httpd context via httpd_queue_work
+  // Runs inside httpd context via httpd_queue_work. 0.9.2: the socket write
+  // happens OUTSIDE the ring mutex (audit 05.09, P1-1): a sleeping phone whose
+  // TCP window is full blocks send() for send_wait_timeout, and holding _mtx
+  // through that stalled the mesh loop in writeFrame/checkRecvFrame.
+  void drainTx();
   void resetQueues();
   // Prog przejecia sesji: podbija generacje pod mutexem. Ramki RX i TX nosza
   // generacje z chwili powstania — stare komendy pomija konsument, stare

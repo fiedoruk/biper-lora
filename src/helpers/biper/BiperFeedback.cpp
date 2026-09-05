@@ -44,7 +44,10 @@ static bool ninja = false;
 static void play(const ToneStep* m) {
   if (ninja) return;
   melody = m;
-  melody_step_until = 0;  // advance on next tick
+  // "Teraz", nie 0: z zerem porownanie ze znakiem w melody_tick() wypadalo
+  // ujemnie po 24,9 dnia pracy i zadna melodia juz nie startowala — repeater
+  // na parapecie po miesiacu tracil buzzer (audyt 05.09, C-17).
+  melody_step_until = millis();
 }
 
 static void melody_tick(uint32_t now) {
@@ -80,7 +83,9 @@ static void led(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 // One-shot flash requested by an event; overrides ambient for its duration.
+// Jawny stan zamiast sentinela w czasie — patrz play() (C-17).
 static uint32_t flash_until = 0;
+static bool flash_on = false;
 
 static void flash(uint8_t r, uint8_t g, uint8_t b, uint16_t ms) {
   // Ninja mode has to be checked HERE, not only in play(). Until 18 Aug 2026 it
@@ -93,6 +98,7 @@ static void flash(uint8_t r, uint8_t g, uint8_t b, uint16_t ms) {
   if (ninja) return;
   led(r, g, b);
   flash_until = millis() + ms;
+  flash_on = true;
 }
 
 // --- public API ---
@@ -130,7 +136,7 @@ void biper_set_ninja(bool on) {
   if (on) {
     noTone(BIPER_PIN_BUZZER);
     melody = nullptr;
-    flash_until = 0;
+    flash_on = false;
     led(0, 0, 0);
   }
 }
@@ -141,7 +147,10 @@ void biper_feedback_tick(bool ap_active, uint32_t now) {
   if (ninja) return;  // dark and silent, LED already off
   melody_tick(now);
 
-  if ((int32_t)(now - flash_until) < 0) return;  // event flash owns the LED now
+  if (flash_on) {
+    if ((int32_t)(now - flash_until) < 0) return;  // event flash owns the LED now
+    flash_on = false;
+  }
 
   if (ap_active) {
     // Blue breathing while the hotspot runs (triangle ramp).
