@@ -148,7 +148,7 @@ C6L physically carries 16 MB even though the stock definition pretends 4).
 This is the part a reviewer should check first.
 
 ```
-73 files changed, 15575 insertions(+), 373 deletions(-)   # vs MeshCore companion-v1.17.1, as of 5 Sep 2026
+73 files changed, 15583 insertions(+), 373 deletions(-)   # vs MeshCore companion-v1.17.1, as of 5 Sep 2026
 ```
 
 Of those lines  about 7 000 sit in two generated headers — the gzipped panel

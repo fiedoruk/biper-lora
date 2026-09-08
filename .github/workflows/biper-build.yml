@@ -20,6 +20,7 @@ on:
       - 'examples/companion_radio/**'
       - 'platformio.ini'
       - '.github/README.md'
+      - 'CHANGELOG.md'
       - '.github/workflows/biper-build.yml'
   pull_request:
   workflow_dispatch:
